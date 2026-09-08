@@ -1,0 +1,180 @@
+"""Step 1 end-to-end tests: upload → analyze → job progress → persisted results."""
+from __future__ import annotations
+
+import time
+from pathlib import Path
+
+from tests.conftest import TESTDATA
+
+
+def _upload(client, pcap_name: str) -> str:
+    path = TESTDATA / pcap_name
+    with open(path, "rb") as f:
+        resp = client.post(
+            "/api/captures", files={"file": (pcap_name, f, "application/octet-stream")}
+        )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+def _analyze_and_wait(client, capture_id: str, parser: str | None = None, timeout: float = 30.0) -> dict:
+    body = {"parser": parser} if parser else None
+    resp = client.post(f"/api/captures/{capture_id}/analyze", json=body)
+    assert resp.status_code == 202, resp.text
+    job_id = resp.json()["id"]
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        job = client.get(f"/api/jobs/{job_id}").json()
+        if job["status"] in ("completed", "failed"):
+            return job
+        time.sleep(0.1)
+    raise AssertionError("job did not finish in time")
+
+
+def test_health(client):
+    resp = client.get("/api/health")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+
+
+def test_parsers_available(client):
+    resp = client.get("/api/captures/meta/parsers")
+    assert resp.status_code == 200
+    assert resp.json()["scapy"] is True
+
+
+def test_upload_rejects_bad_extension(client):
+    resp = client.post(
+        "/api/captures", files={"file": ("evil.txt", b"hello", "text/plain")}
+    )
+    assert resp.status_code == 400
+
+
+def test_upload_creates_capture(client):
+    capture_id = _upload(client, "normal_traffic.pcap")
+    resp = client.get(f"/api/captures/{capture_id}")
+    body = resp.json()
+    assert body["filename"] == "normal_traffic.pcap"
+    assert body["status"] == "created"
+    assert body["size_bytes"] > 0
+
+
+def test_list_captures(client):
+    _upload(client, "normal_traffic.pcap")
+    _upload(client, "port_scan.pcap")
+    resp = client.get("/api/captures")
+    assert resp.status_code == 200
+    assert len(resp.json()) >= 2
+
+
+def test_analysis_end_to_end_normal(client):
+    capture_id = _upload(client, "normal_traffic.pcap")
+    job = _analyze_and_wait(client, capture_id)
+    assert job["status"] == "completed", job
+    assert job["progress"] == 100
+    assert job["result"]["parser"] == "scapy"
+    assert job["result"]["packets"] == 12
+
+    capture = client.get(f"/api/captures/{capture_id}").json()
+    assert capture["status"] == "completed"
+    assert capture["analysis_progress"] == 100
+    assert capture["packet_count"] == 12
+    assert capture["first_packet_ts"] is not None
+    # 6 DNS + 4 HTTP + 2 TLS packets
+    protocols = capture["summary"]["protocol_counts"]
+    assert protocols.get("DNS") == 6
+    assert protocols.get("HTTP") == 4
+    assert protocols.get("TLS") == 2
+
+
+def test_analysis_port_scan(client):
+    capture_id = _upload(client, "port_scan.pcap")
+    job = _analyze_and_wait(client, capture_id)
+    assert job["status"] == "completed", job
+    capture = client.get(f"/api/captures/{capture_id}").json()
+    assert capture["packet_count"] == 100
+    top_talker = capture["summary"]["top_talkers"][0]
+    assert top_talker["ip"] == "192.168.1.42"  # the scanner
+
+
+def test_analysis_dns_tunneling_counts(client):
+    capture_id = _upload(client, "dns_tunneling.pcap")
+    job = _analyze_and_wait(client, capture_id)
+    assert job["status"] == "completed"
+    capture = client.get(f"/api/captures/{capture_id}").json()
+    assert capture["packet_count"] == 128
+    assert capture["summary"]["protocol_counts"]["DNS"] == 128
+
+
+def test_analysis_failure_handled(client, monkeypatch):
+    """A corrupt file must mark the capture failed, not crash the app."""
+    capture_id = _upload(client, "normal_traffic.pcap")
+    # overwrite stored bytes with garbage
+    from app.db.orm import CaptureModel
+    from app.core.database import SessionLocal
+
+    db = SessionLocal()
+    capture = db.get(CaptureModel, capture_id)
+    Path(capture.stored_path).write_bytes(b"this is not a pcap file")
+    db.commit(); db.close()
+
+    resp = client.post(f"/api/captures/{capture_id}/analyze")
+    assert resp.status_code == 202
+    job_id = resp.json()["id"]
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        job = client.get(f"/api/jobs/{job_id}").json()
+        if job["status"] in ("completed", "failed"):
+            break
+        time.sleep(0.1)
+    assert job["status"] == "failed"
+    capture = client.get(f"/api/captures/{capture_id}").json()
+    assert capture["status"] == "failed"
+    assert capture["error"] is not None
+
+
+def test_analyze_missing_capture(client):
+    resp = client.post("/api/captures/nonexistent/analyze")
+    assert resp.status_code == 404
+
+
+def test_unknown_parser_rejected(client):
+    capture_id = _upload(client, "normal_traffic.pcap")
+    resp = client.post(f"/api/captures/{capture_id}/analyze", json={"parser": "zeek"})
+    assert resp.status_code == 400
+    assert "Unknown parser" in resp.json()["detail"]
+
+
+def test_tshark_parser_unavailable_graceful(client):
+    capture_id = _upload(client, "normal_traffic.pcap")
+    resp = client.post(f"/api/captures/{capture_id}/analyze", json={"parser": "tshark"})
+    # tshark not installed in this env -> fast 400 with clear message
+    assert resp.status_code == 400
+    assert "not available" in resp.json()["detail"]
+
+
+def test_jobs_listing(client):
+    capture_id = _upload(client, "normal_traffic.pcap")
+    _analyze_and_wait(client, capture_id)
+    resp = client.get("/api/jobs")
+    assert resp.status_code == 200
+    assert any(j["status"] == "completed" for j in resp.json())
+
+
+def test_scapy_parser_normalization_direct():
+    """Unit-level: parser layer returns normalized packets, no scapy objects leak."""
+    from app.parsers import ScapyParser
+
+    parser = ScapyParser()
+    parsed = parser.parse_file(str(TESTDATA / "dns_tunneling.pcap"))
+    assert parsed.parser_used == "scapy"
+    assert len(parsed.packets) == 128
+    pkt = parsed.packets[0]
+    assert pkt.source_ip == "192.168.1.42"
+    assert pkt.destination_ip == "192.168.1.1"
+    assert pkt.protocol == "DNS"
+    assert pkt.transport == "UDP"
+    assert pkt.source_port == 33400
+    assert pkt.destination_port == 53
+    assert "dns.query" in pkt.metadata
+    assert not hasattr(pkt, "original")  # scapy internals must not leak

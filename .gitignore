@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Node
+node_modules/
+frontend/dist/
+
+# App data
+backend/data/
+*.db
+*.sqlite3
+
+# PCAP artifacts (keep generated test data out of git)
+test-data/synthetic/*.pcap
+test-data/synthetic/*.pcapng
+
+# Env
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/

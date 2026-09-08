@@ -1,0 +1,50 @@
+"""NetScope FastAPI application entry point."""
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.api import alerts, captures, engineer, flows, hosts_protocols, jobs, timeline_graph
+from app.core.config import settings
+from app.core.database import Base, engine
+from app.parsers import register_default_parsers
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    settings.ensure_dirs()
+    Base.metadata.create_all(bind=engine)
+    register_default_parsers()
+    yield
+
+
+app = FastAPI(
+    title=settings.app_name,
+    version="0.1.0",
+    description="Network Intelligence, Traffic Investigation & Network Engineering Platform",
+    lifespan=lifespan,
+)
+
+if settings.enable_cors:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+app.include_router(captures.router)
+app.include_router(jobs.router)
+app.include_router(flows.router)
+app.include_router(hosts_protocols.router)
+app.include_router(alerts.router)
+app.include_router(timeline_graph.router)
+app.include_router(engineer.router)
+
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok", "app": settings.app_name}
