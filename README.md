@@ -1,209 +1,260 @@
-# NetScope
 
-**Network Intelligence, Traffic Investigation & Network Engineering Platform**
+# TrafficLens
 
-> Philosophy: *"Here is what happened. Let me show you the packets and network evidence behind it."*
+**Network traffic analysis and investigation, built around understanding what happened.**
 
-Where Wireshark gives you packets and asks "figure out what happened", NetScope reconstructs the story first — flows, hosts, behaviors, events, incidents — and lets you drill down to the packet evidence behind every conclusion.
+TrafficLens turns raw network traffic into a clear picture of network activity. Instead of forcing you to work through thousands of packets to understand an incident, it reconstructs the traffic into flows, hosts, protocols, behaviors, events, and alerts — while keeping the underlying packets available as evidence.
 
-```
-Packet → Flow → Behavior → Event → Investigation
-```
+> Here is what happened. Let me show you the network evidence behind it.
 
----
+```text
+Packets → Flows → Hosts → Behaviors → Events → Investigation
+````
+
+## Screenshots
+
+<!-- Add your screenshots here -->
+
+![TrafficLens Dashboard](docs/images/dashboard.png)
+
+## What TrafficLens Does
+
+### Traffic Investigation
+
+* Reconstructs bidirectional TCP and UDP flows
+* Tracks packets, bytes, duration, and direction
+* Detects retransmissions, resets, and connection failures
+* Provides packet-level evidence for investigations
+
+### Host & Protocol Analysis
+
+* Builds profiles for observed hosts
+* Identifies services, ports, and communication relationships
+* Reconstructs DNS transactions
+* Analyzes HTTP requests and responses
+* Extracts TLS sessions and SNI information
+* Provides protocol-level behavioral statistics
+
+### Suspicious Activity Detection
+
+TrafficLens uses deterministic and explainable rules rather than relying on black-box machine learning.
+
+Current detections include:
+
+* Port scanning
+* C2-style beaconing
+* DNS tunneling indicators
+* NXDOMAIN bursts
+* Suspicious ports
+* Excessive connection failures
+* Direct-IP connections without DNS
+* Unusually high outbound traffic
+
+Each alert provides a score, severity, explanation, detection reasons, supporting evidence, and related flows.
+
+### Timeline, Graph & Replay
+
+TrafficLens turns network activity into an investigation timeline that can be filtered by host, protocol, event type, severity, and time.
+
+It also provides:
+
+* Network relationship graphs
+* Chronological event timelines
+* Incident replay
+* Flow and packet drill-down
+
+### Network Engineering
+
+TrafficLens is not limited to security investigations. It also provides network health information including:
+
+* Bandwidth and packet rates
+* Top talkers
+* TCP health
+* DNS health
+* Traffic distribution
+* Network issues
 
 ## Quick Start
 
-### Backend (Python 3.12+)
+### Requirements
+
+* Python 3.12+
+* Node.js 18+
+* npm
+
+### Backend
 
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate
+
+python -m venv .venv
+source .venv/bin/activate
+
 pip install -r requirements.txt
+
 uvicorn app.main:app --reload --port 8000
 ```
 
-- API: http://localhost:8000/api
-- Interactive docs: http://localhost:8000/docs
+The API will be available at:
 
-### Frontend (Node 18+)
+[http://localhost:8000](http://localhost:8000)
+
+Interactive API documentation:
+
+[http://localhost:8000/docs](http://localhost:8000/docs)
+
+### Frontend
+
+Open another terminal:
 
 ```bash
 cd frontend
+
 npm install
-npm run dev          # http://localhost:5173 (proxies /api to :8000)
-npm run build        # production build (tsc + vite)
+npm run dev
 ```
 
-### Test Data
+Then open:
+
+[http://localhost:5173](http://localhost:5173)
+
+## Test Data
+
+TrafficLens includes a deterministic PCAP generator for development and testing.
+
+From the `backend` directory with the virtual environment activated:
 
 ```bash
-# backend venv active, from backend/
 python ../scripts/generate_test_pcaps.py --out ../test-data/synthetic
 ```
 
-Deterministic scenarios: `normal_traffic`, `port_scan`, `dns_tunneling`, `c2_beacon`, `tcp_problems`.
+The generator includes scenarios such as:
 
-### Tests
-
-```bash
-cd backend && source .venv/bin/activate
-pytest tests/ -q              # 74 tests across all 6 build steps
-```
-
----
+* Normal traffic
+* Port scanning
+* DNS tunneling
+* C2-style beaconing
+* TCP connection problems
 
 ## Architecture
 
+TrafficLens separates packet parsing from the analysis engine through a normalized internal model.
+
+```text
+PCAP
+  │
+  ▼
+Packet Parser
+  │
+  ├── Scapy
+  └── TShark
+  │
+  ▼
+Normalized Packets
+  │
+  ├── Flow Reconstruction
+  ├── Protocol Analysis
+  ├── Host Profiling
+  └── Behavioral Analysis
+          │
+          ▼
+        Alerts
+          │
+          ▼
+ Timeline / Graph / Replay
+          │
+          ▼
+     Investigation
 ```
-netscope/
+
+Parser-specific objects do not leave the parser layer. This keeps the analysis engine independent from the underlying packet parser and makes it possible to add additional parsers in the future.
+
+## Project Structure
+
+```text
+TrafficLens/
 ├── backend/
 │   ├── app/
-│   │   ├── core/          # config, SQLAlchemy engine, normalized packet model
-│   │   ├── parsers/       # PacketParser ABC + ScapyParser (default) + TSharkParser (optional)
-│   │   ├── db/            # ORM models (SQLite)
-│   │   ├── repositories/   # data-access layer (persistence isolated from business logic)
-│   │   ├── services/      # analysis pipeline:
-│   │   │   ├── analysis.py          # pipeline orchestrator + job progress
-│   │   │   ├── flow_builder.py      # bidirectional flow aggregation, TCP states
-│   │   │   ├── protocol_extractor.py# DNS/HTTP/TLS transaction pairing
-│   │   │   ├── host_profiler.py     # host profiles, roles, services
-│   │   │   ├── suspicion_engine.py  # 8 deterministic explainable rules
-│   │   │   ├── timeline_graph.py    # behavioral events + Cytoscape graph
-│   │   │   └── engineer_metrics.py  # network health metrics (Module G)
-│   │   ├── api/           # FastAPI routers (captures, jobs, flows, hosts/protocols,
-│   │   │                  # alerts, timeline/graph/replay, engineer)
-│   │   └── schemas/       # Pydantic API models (separate from ORM)
+│   │   ├── api/
+│   │   ├── core/
+│   │   ├── db/
+│   │   ├── parsers/
+│   │   ├── repositories/
+│   │   ├── schemas/
+│   │   └── services/
 │   └── tests/
+│
 ├── frontend/
 │   └── src/
-│       ├── pages/         # Dashboard, Capture, Flows, Hosts, Protocol,
-│       │                  # Timeline, Graph, Alerts, Replay, Engineer
-│       ├── api/           # typed REST client
-│       ├── stores/        # Zustand
-│       └── types/         # normalized NetScope types (parser-agnostic)
+│       ├── api/
+│       ├── pages/
+│       ├── stores/
+│       └── types/
+│
 ├── scripts/
-│   └── generate_test_pcaps.py   # deterministic synthetic PCAP generator
-└── test-data/synthetic/
+│   └── generate_test_pcaps.py
+│
+└── test-data/
 ```
 
-### Parser Pluggability
+## Tech Stack
 
-Parser-specific objects never leave the parser layer. Everything downstream consumes
-the normalized model (`NormalizedPacket`, `ParsedCapture`):
+### Backend
+
+* Python
+* FastAPI
+* SQLAlchemy
+* SQLite
+* Scapy
+* Pydantic
+
+### Frontend
+
+* React
+* TypeScript
+* Vite
+* Tailwind CSS
+* Zustand
+* TanStack Table
+* Cytoscape.js
+* Recharts
+
+## Testing
+
+Run the backend test suite with:
+
+```bash
+cd backend
+source .venv/bin/activate
+pytest tests/ -q
+```
+
+TrafficLens also uses deterministic synthetic PCAPs to make analysis scenarios reproducible during development and testing.
+
+## Roadmap
+
+* Live network interface capture
+* IPv6 support
+* Real-time analysis updates
+* PCAP analysis caching
+* Multi-PCAP investigations
+* Investigation and report export
+* Additional protocol parsers
+* Additional behavioral detections
+
+## Current Status
+
+TrafficLens is currently a local, single-user application focused on PCAP-based network investigation and analysis.
+
+The core analysis pipeline, flow reconstruction, protocol analysis, behavioral detection, timeline, graph, replay, and network engineering features are implemented.
+
+## Contributing
+
+TrafficLens is an evolving project. Contributions, ideas, bug reports, and improvements are welcome.
+
+If you have an idea that could make network traffic easier to understand or investigate, feel free to open an issue or submit a pull request.
+
+
 
 ```
-PCAP → PacketParser (ABC) → ScapyParser | TSharkParser | <future: Zeek, Rust, …>
-                               ↓ normalized model ↓
-                    flows → hosts → protocols → alerts → timeline → API
 ```
-
-- **ScapyParser** — default, always works (no Wireshark needed)
-- **TSharkParser** — optional, auto-detected; direct `tshark -T fields` integration (no PyShark)
-- New parsers register via `ParserRegistry` without touching analysis code
-
-### Analysis Pipeline
-
-```
-Upload PCAP → background thread job →
-  parse (Scapy/TShark) → normalize packets →
-  flow reconstruction → persist flows →
-  DNS/HTTP/TLS extraction → host profiling →
-  suspicion engine (8 rules) → persist alerts →
-  timeline events → capture summary
-```
-
-HTTP requests never block: analysis runs in background threads with live progress
-(`captures.analysis_progress`, `jobs.progress` + stage).
-
----
-
-## API Reference
-
-| Endpoint | Purpose |
-|---|---|
-| `POST /api/captures` | upload .pcap/.pcapng |
-| `GET /api/captures[/{id}]` | list/detail (incl. summary, flow/alert stats) |
-| `POST /api/captures/{id}/analyze` | start background analysis (202 + job) |
-| `GET /api/jobs[/{id}]` | job status/progress/stage |
-| `GET /api/flows?capture_id=&transport=&direction=` | reconstructed flows |
-| `GET /api/flows/{id}` | flow detail + packet evidence (drill-down) |
-| `GET /api/hosts[/{id}]?capture_id=&internal=` | host profiles (roles, services, peers) |
-| `GET /api/protocols/dns?domain=&rcode=` | DNS transactions (paired, latency) |
-| `GET /api/protocols/http?host=&status=` | HTTP transactions |
-| `GET /api/protocols/tls?sni=` | TLS sessions with SNI |
-| `GET /api/protocols/stats?capture_id=` | per-protocol behavioral summaries |
-| `GET /api/alerts?capture_id=&severity=&min_score=&rule=` | explainable alerts |
-| `POST /api/alerts/{id}/ack` | acknowledge alert |
-| `GET /api/timeline?capture_id=&host=&protocol=&event_type=&severity=&after=&before=` | filtered event timeline |
-| `GET /api/graph?capture_id=` | Cytoscape elements (hosts/domains/services) |
-| `GET /api/replay?capture_id=&after=` | chronological replay stream |
-| `GET /api/engineer/metrics?capture_id=` | network health metrics + issues |
-| `GET /api/captures/meta/parsers` | parser availability |
-
----
-
-## Suspicion Engine Rules
-
-Deterministic, explainable, zero ML. Every alert ships with severity, 0–100 score,
-weighted `✓` reasons, evidence JSON, related flow IDs, and a plain-English explanation.
-
-| Rule | Trigger |
-|---|---|
-| `port_scan` | ≥10 distinct ports probed, failed connections |
-| `beaconing` | periodic connections (jitter < 10% of interval) |
-| `dns_tunneling` | long encoded labels + high subdomain entropy |
-| `nxdomain_burst` | ≥10 failed lookups |
-| `suspicious_port` | malware-associated ports (4444, 31337, 6667…) |
-| `excessive_connection_failures` | ≥5 failures, small port set |
-| `connection_without_dns` | direct-IP outbound (hardcoded C2 indicator) |
-| `high_outbound_volume` | dominant outbound host (>70% share) |
-
----
-
-## UI Modules
-
-| Page | Module |
-|---|---|
-| Dashboard | top stats, flow/alert summaries, active jobs |
-| Capture | upload → analyze → live progress → results |
-| Flows | TanStack Table, filters, **packet-evidence drill-down** |
-| Hosts | profiles, role inference, relationship tree |
-| Protocol | DNS / HTTP / TLS behavioral analysis |
-| Timeline | filtered chronological events |
-| Graph | Cytoscape relationship graph (hosts/domains/services) |
-| Alerts | explainable alert cards (score gauge, ✓ reasons, evidence) |
-| Replay | play/pause/scrub/speed through the incident |
-| Engineer Mode | pps/bandwidth charts, TCP/DNS health, MTU, top talkers |
-
-## Configuration
-
-Environment variables (all optional):
-
-| Var | Default | Purpose |
-|---|---|---|
-| `NETSCOPE_DB` | `backend/data/netscope.db` | SQLite path |
-| `NETSCOPE_UPLOAD_DIR` | `backend/data/uploads` | upload storage |
-| `NETSCOPE_PARSER` | `auto` | preferred parser (scapy/tshark) |
-| `NETSCOPE_TSHARK` | `tshark` | tshark binary path |
-| `NETSCOPE_MAX_UPLOAD` | 500 MB | upload size cap |
-
-## Status
-
-**v1 complete — all 6 steps built and verified.**
-
-- [x] Step 1 — Foundation: scaffold, parser abstraction, upload, background jobs, generator
-- [x] Step 2 — Flow reconstruction: aggregation, TCP states, retransmissions, evidence
-- [x] Step 3 — Host profiling & protocol explorer: DNS/HTTP/TLS extraction, roles
-- [x] Step 4 — Suspicion engine: 8 deterministic explainable rules
-- [x] Step 5 — Graph + timeline + replay: Cytoscape, filtered events, playback
-- [x] Step 6 — Engineer mode + polish: health metrics, UX states, docs
-
-74 backend tests · 19 end-to-end smoke checks · clean frontend build
-
-## Known Limitations (v1)
-
-- Polling-based progress (SSE/WebSocket planned)
-- Evidence/stats endpoints re-parse the PCAP per request (caching planned)
-- No IPv6 test data; no live interface capture yet
-- Single-user, local deployment by design
