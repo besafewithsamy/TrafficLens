@@ -13,9 +13,8 @@ Packets → Flows → Hosts → Behaviors → Events → Investigation
 
 ## Screenshots
 
-<!-- Add your screenshots here -->
 
-![TrafficLens Dashboard](docs/images/dashboard.png)
+![Dashboard overview](assets/pic1.png)
 
 ## What TrafficLens Does
 
