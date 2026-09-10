@@ -83,14 +83,13 @@ TrafficLens is not limited to security investigations. It also provides network 
 ### Backend
 
 ```bash
-cd backend
 
-python -m venv .venv
+cd ~/Projects/TrafficLens/backend
+
 source .venv/bin/activate
 
-pip install -r requirements.txt
+python -m uvicorn app.main:app --reload --port 8000
 
-uvicorn app.main:app --reload --port 8000
 ```
 
 The API will be available at:
@@ -106,9 +105,9 @@ Interactive API documentation:
 Open another terminal:
 
 ```bash
-cd frontend
 
-npm install
+cd ~/Projects/TrafficLens/frontend
+
 npm run dev
 ```
 
