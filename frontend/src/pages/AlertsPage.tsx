@@ -24,6 +24,12 @@ const RULE_LABELS: Record<string, string> = {
   excessive_connection_failures: 'Connection Failures',
   connection_without_dns: 'Direct IP Connection',
   high_outbound_volume: 'High Outbound Volume',
+  arp_spoofing: 'ARP Spoofing',
+  lateral_movement: 'Lateral Movement',
+  dga_domain: 'DGA Domains',
+  data_exfiltration: 'Data Exfiltration',
+  low_slow_beaconing: 'Low-and-Slow Beaconing',
+  suspicious_user_agent: 'Suspicious User Agent',
 }
 
 export function AlertsPage() {
@@ -46,6 +52,14 @@ export function AlertsPage() {
       api.ackAlert(id, acknowledged),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
   })
+
+  // capture summary for correlated incidents
+  const { data: captureDetail } = useQuery({
+    queryKey: ['captureDetail', effectiveCaptureId],
+    queryFn: () => api.getCapture(effectiveCaptureId!),
+    enabled: !!effectiveCaptureId,
+  })
+  const incidents = captureDetail?.summary?.incidents ?? []
 
   const counts = (alerts ?? []).reduce<Record<string, number>>((acc, a) => {
     acc[a.severity] = (acc[a.severity] ?? 0) + 1
@@ -76,6 +90,36 @@ export function AlertsPage() {
           </button>
         ))}
       </div>
+
+      {/* Correlated incidents */}
+      {incidents.length > 0 && (
+        <div className="mb-6 space-y-2">
+          <div className="text-xs font-medium uppercase tracking-wider text-slate-500">
+            Correlated incidents ({incidents.length})
+          </div>
+          {incidents.map((inc) => (
+            <div
+              key={`${inc.source_ip}-${inc.first_seen}`}
+              className="rounded-xl border border-red-500/25 bg-red-500/5 px-4 py-3"
+            >
+              <div className="flex flex-wrap items-center gap-3">
+                <span
+                  className={`rounded px-2 py-0.5 text-[10px] font-bold ring-1 ${
+                    (SEVERITY_STYLE[inc.severity] ?? SEVERITY_STYLE.info).badge
+                  }`}
+                >
+                  {(SEVERITY_STYLE[inc.severity] ?? SEVERITY_STYLE.info).label}
+                </span>
+                <span className="text-sm font-medium text-slate-200">{inc.title}</span>
+                <span className="ml-auto font-mono text-xs text-slate-500">
+                  {inc.alert_count} alerts · max score {inc.max_score}
+                </span>
+              </div>
+              <p className="mt-1.5 text-xs leading-relaxed text-slate-400">{inc.story}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {!analyzed.length ? (
         <EmptyState>No analyzed captures yet.</EmptyState>

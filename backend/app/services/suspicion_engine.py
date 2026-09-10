@@ -7,8 +7,10 @@ No ML. No black boxes. Every score traces back to observable network facts.
 """
 from __future__ import annotations
 
+import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from math import log2
 
 from app.core.models import ParsedCapture
 from app.services.flow_builder import is_private_ip
@@ -489,7 +491,490 @@ def rule_high_outbound_volume(flows: list[dict]) -> list[RuleResult]:
     return results
 
 
+# ---------------- Phase 2 rules ----------------
+
+# Ports whose internal-to-internal use suggests credential theft / remote control
+LATERAL_MOVE_PORTS = {22: "SSH", 445: "SMB", 3389: "RDP", 5985: "WinRM", 5986: "WinRM-TLS", 5900: "VNC"}
+
+# UA fingerprints commonly seen in tooling/malware (deterministic substring matches)
+SUSPICIOUS_UA_PATTERNS = [
+    (r"(?i)sqlmap", "sqlmap injection tool"),
+    (r"(?i)nikto", "Nikto web scanner"),
+    (r"(?i)masscan", "masscan scanner"),
+    (r"(?i)nmap scripting engine", "Nmap NSE"),
+    (r"(?i)^python-requests", "generic python script"),
+    (r"(?i)^curl/", "scripted curl"),
+    (r"(?i)^wget$", "wget (no UA customizing)"),
+    (r"(?i)metasploit", "Metasploit"),
+    (r"(?i)^go-http-client", "Go malware default client"),
+    (r"(?i)mimikatz", "Mimikatz"),
+    (r"(?i)^backdoor", "named backdoor client"),
+    (r"(?i)^python-urllib", "python urllib script"),
+]
+
+
+def _shannon_entropy(s: str) -> float:
+    """Shannon entropy of a string (bits per character)."""
+    if not s:
+        return 0.0
+    counts = Counter(s)
+    n = len(s)
+    return -sum((c / n) * log2(c / n) for c in counts.values())
+
+
+def rule_arp_spoofing(parsed: ParsedCapture) -> list[RuleResult]:
+    """One IP claimed by multiple MACs, or gratuitous ARP announcements.
+
+    ARP data is parsed in the ScapyParser (arp.* metadata) — this rule finally uses it.
+    """
+    # ip -> set of MACs claiming it (from ARP requests/replies)
+    ip_to_macs: dict[str, set[str]] = defaultdict(set)
+    # (ip, mac) -> packet refs + timestamps for evidence
+    claims: dict[tuple, dict] = defaultdict(lambda: {"refs": [], "times": []})
+    gratuitous = 0
+    gratuitous_refs: list[int] = []
+
+    for pkt in parsed.packets:
+        md = pkt.metadata
+        src_ip, dst_ip = md.get("arp.src_ip"), md.get("arp.dst_ip")
+        src_mac = md.get("arp.src_mac")
+        if not (src_ip and src_mac):
+            continue
+        ip_to_macs[src_ip].add(src_mac)
+        key = (src_ip, src_mac)
+        claims[key]["refs"].append(pkt.packet_reference)
+        claims[key]["times"].append(pkt.timestamp)
+        # gratuitous announce: ARP request/reply telling the sender's own mapping
+        if dst_ip == src_ip:
+            gratuitous += 1
+            if len(gratuitous_refs) < 20:
+                gratuitous_refs.append(pkt.packet_reference)
+
+    results = []
+    for ip, macs in ip_to_macs.items():
+        if len(macs) < 2:
+            continue
+        reasons = [
+            _reason("IP claimed by multiple MACs", f"{ip} announced by {len(macs)} MACs: {', '.join(sorted(macs))}", 45),
+        ]
+        score = 70
+        if gratuitous > 0:
+            reasons.append(_reason("Gratuitous ARP announcements", f"{gratuitous} ARP packets announcing own mapping", 15))
+            score = _clamp(score + 10)
+        all_refs = []
+        for mac in sorted(macs):
+            all_refs.extend(claims[(ip, mac)]["refs"][:10])
+        results.append(
+            RuleResult(
+                rule_name="arp_spoofing",
+                title=f"ARP conflict: {ip} claimed by {len(macs)} MACs",
+                severity=_severity_for(score),
+                score=int(score),
+                reasons=reasons,
+                evidence={
+                    "ip": ip,
+                    "macs": sorted(macs),
+                    "gratuitous_arp_count": gratuitous,
+                    "mac_claim_evidence": {
+                        mac: {"packets": len(claims[(ip, mac)]["refs"])} for mac in sorted(macs)
+                    },
+                },
+                source_ip=ip,
+                related_packet_refs=all_refs[:20],
+                explanation=(
+                    f"IP address {ip} was claimed by {len(macs)} different MAC addresses in ARP "
+                    f"traffic — classic ARP-spoofing / man-in-the-middle signature (attacker "
+                    f"poisons the gateway mapping)."
+                ),
+            )
+        )
+    return results
+
+
+def rule_lateral_movement(flows: list[dict]) -> list[RuleResult]:
+    """Internal host fanning out to many other internal hosts on admin ports."""
+    by_src: dict[str, dict] = defaultdict(lambda: {"targets": {}, "flows": []})
+    for f in flows:
+        if f["destination_port"] not in LATERAL_MOVE_PORTS:
+            continue
+        if not (is_private_ip(f["source_ip"]) and is_private_ip(f["destination_ip"])):
+            continue
+        s = by_src[f["source_ip"]]
+        s["targets"].setdefault(
+            f["destination_ip"], {"ports": set(), "successful": 0, "failed": 0}
+        )
+        t = s["targets"][f["destination_ip"]]
+        t["ports"].add(f["destination_port"])
+        t["successful" if not f["failed"] else "failed"] += 1
+        s["flows"].append(f)
+
+    results = []
+    for src, s in by_src.items():
+        n_targets = len(s["targets"])
+        if n_targets < 3:
+            continue
+        admin_ports = sorted({p for t in s["targets"].values() for p in t["ports"]})
+        successful_targets = sum(1 for t in s["targets"].values() if t["successful"] > 0)
+        reasons = [
+            _reason("Internal fan-out", f"{src} touched {n_targets} internal hosts", 35),
+            _reason("Admin/administrative ports", f"ports {admin_ports} ({', '.join(LATERAL_MOVE_PORTS.get(p, str(p)) for p in admin_ports[:4])})", 30),
+        ]
+        score = 40 + min(n_targets, 10) * 4
+        if successful_targets >= 2:
+            reasons.append(_reason("Successful connections", f"{successful_targets} targets answered — access achieved", 20))
+            score += 15
+        results.append(
+            RuleResult(
+                rule_name="lateral_movement",
+                title=f"Lateral movement: {src} → {n_targets} internal hosts (admin ports)",
+                severity=_severity_for(_clamp(score)),
+                score=int(_clamp(score)),
+                reasons=reasons,
+                evidence={
+                    "target_count": n_targets,
+                    "targets": {
+                        ip: {
+                            "ports": sorted(t["ports"]),
+                            "successful": t["successful"],
+                            "failed": t["failed"],
+                        }
+                        for ip, t in list(s["targets"].items())[:20]
+                    },
+                    "ports_used": admin_ports,
+                },
+                source_ip=src,
+                related_flow_ids=[f["_alert_flow_id"] for f in s["flows"][:50]],
+                explanation=(
+                    f"Internal host {src} connected to {n_targets} other internal hosts on "
+                    f"administrative ports {admin_ports}. This internal fan-out pattern is "
+                    f"characteristic of post-compromise lateral movement."
+                ),
+            )
+        )
+    return results
+
+
+def rule_dga_domains(dns_txns: list[dict]) -> list[RuleResult]:
+    """Algorithmically-generated domains: high entropy + no dictionary structure.
+
+    Compares each client's domains against the capture's own baseline entropy.
+    """
+    # capture-wide baseline: median entropy of second-level domains, computed over
+    # READABLE domains only (dictionary words) so DGAs can't skew their own baseline
+    all_domains = [t["query_name"].rstrip(".") for t in dns_txns if t.get("query_name")]
+    if len(all_domains) < 10:
+        return []
+
+    def _sld(name: str) -> str:
+        labels = name.split(".")
+        return labels[0] if len(labels) == 1 else labels[-2]
+
+    def _readable(name: str) -> bool:
+        """Heuristic: readable SLDs have vowels breaking up consonant runs."""
+        return max(
+            (len(m.group()) for m in re.finditer(r"[bcdfghjklmnpqrstvwxz]{4,}", name.lower())),
+            default=0,
+        ) < 4
+
+    baseline_pool = sorted(
+        _shannon_entropy(_sld(d)) for d in all_domains if _readable(d)
+    )
+    if len(baseline_pool) < 5:
+        return []  # not enough readable traffic to establish a baseline
+    baseline = baseline_pool[len(baseline_pool) // 2]
+
+    by_client: dict[str, dict] = defaultdict(
+        lambda: {"domains": [], "high_entropy": [], "nx": 0}
+    )
+    for t in dns_txns:
+        name = (t.get("query_name") or "").rstrip(".")
+        if not name:
+            continue
+        c = by_client[t["client_ip"]]
+        c["domains"].append(name)
+        e = _shannon_entropy(_sld(name))
+        # DGA markers: high entropy vs baseline AND long AND no vowels-rhythm (consonant runs)
+        consonant_run = max((len(m.group()) for m in re.finditer(r"[bcdfghjklmnpqrstvwxz]{4,}", name.lower())), default=0)
+        if e > max(3.2, baseline + 0.6) and len(_sld(name)) >= 8 and consonant_run >= 4:
+            c["high_entropy"].append((name, round(e, 2)))
+        if t.get("rcode") == 3:
+            c["nx"] += 1
+
+    results = []
+    for client, d in by_client.items():
+        n_hi = len(d["high_entropy"])
+        if n_hi < 5:
+            continue
+        reasons = [
+            _reason("High-entropy domains", f"{n_hi} domains with entropy well above baseline ({baseline:.2f})", 40),
+            _reason("Dictionary-less labels", "long consonant runs, no readable words", 20),
+        ]
+        score = 45 + min(n_hi, 20) * 2
+        if d["nx"] >= 5:
+            reasons.append(_reason("Many NXDOMAIN replies", f"{d['nx']} domains failed to resolve (typical of DGA rotation)", 20))
+            score += 10
+        results.append(
+            RuleResult(
+                rule_name="dga_domain",
+                title=f"DGA-like domains from {client} ({n_hi} algorithmic names)",
+                severity=_severity_for(int(_clamp(score))),
+                score=int(_clamp(score)),
+                reasons=reasons,
+                evidence={
+                    "high_entropy_domains": [n for n, _ in d["high_entropy"][:20]],
+                    "count": n_hi,
+                    "baseline_entropy": round(baseline, 2),
+                    "sample_entropies": [e for _, e in d["high_entropy"][:10]],
+                    "nxdomain_count": d["nx"],
+                },
+                source_ip=client,
+                related_packet_refs=[
+                    t["packet_ref"] for t in dns_txns
+                    if t["client_ip"] == client and t.get("query_name")
+                ][:50],
+                explanation=(
+                    f"Host {client} looked up {n_hi} high-entropy, dictionary-less domains "
+                    f"(capture baseline entropy {baseline:.2f}). Domains like these are usually "
+                    f"generated by malware DGAs to evade static blocklists."
+                ),
+            )
+        )
+    return results
+
+
+def rule_data_exfiltration(flows: list[dict], dns_txns: list[dict]) -> list[RuleResult]:
+    """Large outbound transfer to a rare destination (first contact + big volume)."""
+    # which external IPs ever got DNS-resolved (known/popular destinations)
+    resolved: set[str] = set()
+    for t in dns_txns:
+        for ip in t.get("response_ips", []):
+            resolved.add(ip)
+
+    by_dest: dict[tuple, dict] = defaultdict(lambda: {"flows": [], "bytes": 0})
+    for f in flows:
+        if not (is_private_ip(f["source_ip"]) and not is_private_ip(f["destination_ip"])):
+            continue
+        key = (f["source_ip"], f["destination_ip"])
+        by_dest[key]["flows"].append(f)
+        by_dest[key]["bytes"] += f["bytes"]
+
+    # capture-wide baseline: median per-destination external volume
+    vols = sorted(d["bytes"] for d in by_dest.values())
+    if not vols:
+        return []
+    baseline = vols[len(vols) // 2]
+
+    results = []
+    for (src, dst), d in by_dest.items():
+        bytes_ = d["bytes"]
+        if bytes_ < 100_000:  # too small to call exfiltration in synthetic data
+            continue
+        reasons = []
+        score = 0
+        if baseline > 0 and bytes_ > baseline * 20:
+            reasons.append(_reason("Volume far above baseline", f"{bytes_} bytes vs median {baseline} per destination", 35))
+            score += 35
+        if dst not in resolved:
+            reasons.append(_reason("First-contact destination", f"{dst} never resolved via DNS in this capture", 25))
+            score += 25
+        duration = max(f["last_seen"] - f["first_seen"] for f in d["flows"])
+        if duration < 30:
+            reasons.append(_reason("Short transfer window", f"{bytes_} bytes moved in {duration:.0f}s", 15))
+            score += 15
+        if not reasons:
+            continue
+        results.append(
+            RuleResult(
+                rule_name="data_exfiltration",
+                title=f"Possible exfiltration: {src} → {dst} ({bytes_} bytes)",
+                severity=_severity_for(int(_clamp(score + 20))),
+                score=int(_clamp(score + 20)),
+                reasons=reasons,
+                evidence={
+                    "bytes": bytes_,
+                    "baseline_bytes": baseline,
+                    "duration_seconds": round(duration, 1),
+                    "destination_resolved_via_dns": dst in resolved,
+                    "flow_count": len(d["flows"]),
+                },
+                source_ip=src,
+                destination_ip=dst,
+                related_flow_ids=[f["_alert_flow_id"] for f in d["flows"][:20]],
+                explanation=(
+                    f"Host {src} transferred {bytes_} bytes to external host {dst} "
+                    f"({'which was never resolved via DNS — first contact' if dst not in resolved else 'in a short window'}) "
+                    f"— consistent with data exfiltration."
+                ),
+            )
+        )
+    return results
+
+
+def rule_low_slow_beaconing(flows: list[dict]) -> list[RuleResult]:
+    """Long-interval periodic connections (hours-like beacons disguised as keepalives).
+
+    rule_beaconing requires >=5 connections with <=10% jitter; this rule covers
+    small connection counts and larger, still-regular intervals.
+    """
+    groups: dict[tuple, list[dict]] = defaultdict(list)
+    for f in flows:
+        if f["transport_protocol"] != "TCP":
+            continue
+        groups[(f["source_ip"], f["destination_ip"], f["destination_port"])].append(f)
+
+    results = []
+    for (src, dst, dport), group in groups.items():
+        if len(group) < 3:  # fewer than beaconing's 5 — low-and-slow needs fewer
+            continue
+        times = sorted(f["first_seen"] for f in group)
+        intervals = [b - a for a, b in zip(times, times[1:])]
+        mean = sum(intervals) / len(intervals)
+        if mean < 60:  # rule_beaconing territory (< 60s); here we want long intervals
+            continue
+        variance = sum((i - mean) ** 2 for i in intervals) / len(intervals)
+        std = variance ** 0.5
+        if mean <= 0 or std / mean > 0.2:  # allow more jitter than fast beaconing
+            continue
+
+        reasons = [
+            _reason("Long-interval periodicity", f"{len(times)} connections at ~{mean / 60:.0f}min intervals", 40),
+            _reason("Low and slow cadence", "few, spread-out check-ins designed to evade rate alerts", 25),
+            _reason("Repeated destination", f"{dst}:{dport} contacted {len(group)} times", 20),
+        ]
+        score = _clamp(55 + min(len(group), 10) * 2)
+        results.append(
+            RuleResult(
+                rule_name="low_slow_beaconing",
+                title=f"Low-and-slow beacon: {src} → {dst}:{dport} every {mean / 60:.0f}min",
+                severity=_severity_for(int(score)),
+                score=int(score),
+                reasons=reasons,
+                evidence={
+                    "intervals": [round(i, 1) for i in intervals[:20]],
+                    "mean_interval": round(mean, 1),
+                    "jitter_ratio": round(std / mean, 3),
+                    "connection_count": len(group),
+                },
+                source_ip=src,
+                destination_ip=dst,
+                destination_port=dport,
+                related_flow_ids=[f["_alert_flow_id"] for f in group[:20]],
+                explanation=(
+                    f"Host {src} checked in with {dst}:{dport} {len(group)} times at regular "
+                    f"~{mean / 60:.0f}-minute intervals — low-and-slow C2 cadence that evades "
+                    f"short-window rate-based detection."
+                ),
+            )
+        )
+    return results
+
+
+def rule_suspicious_user_agent(http_txns: list[dict]) -> list[RuleResult]:
+    """HTTP requests with tool/malware user-agent fingerprints."""
+    hits: dict[str, list[dict]] = defaultdict(list)
+    for t in http_txns:
+        ua = t.get("user_agent")
+        if not ua:
+            continue
+        for pattern, label in SUSPICIOUS_UA_PATTERNS:
+            if re.search(pattern, ua):
+                hits[label].append(t)
+                break
+
+    results = []
+    for label, txns in hits.items():
+        ua_sample = txns[0].get("user_agent", "")[:80]
+        score = _clamp(40 + min(len(txns), 20))
+        results.append(
+            RuleResult(
+                rule_name="suspicious_user_agent",
+                title=f"Suspicious user agent: {label} ({len(txns)} requests)",
+                severity=_severity_for(score),
+                score=int(score),
+                reasons=[
+                    _reason("Tool/malware UA fingerprint", f"{len(txns)} requests with UA matching {label}", 40),
+                    _reason("Sample UA", f'"{ua_sample}"', 15),
+                ],
+                evidence={
+                    "matched_label": label,
+                    "request_count": len(txns),
+                    "sample_user_agent": ua_sample,
+                    "hosts": list({t.get("host") for t in txns if t.get("host")})[:10],
+                },
+                source_ip=txns[0].get("client_ip"),
+                destination_ip=txns[0].get("server_ip"),
+                related_packet_refs=[t["packet_ref"] for t in txns[:20]],
+                explanation=(
+                    f"{len(txns)} HTTP requests carried a user agent matching {label} — "
+                    f'"{ua_sample}". Legitimate browsers rarely send these fingerprints.'
+                ),
+            )
+        )
+    return results
+
+
 # ---------------- Engine ----------------
+
+
+def correlate_alerts(alerts: list[dict]) -> list[dict]:
+    """Group related alerts into incidents (same source host + overlapping time).
+
+    Correlation is deterministic: same source_ip alerts within a 10-minute window
+    merge into one incident with a synthesized story.
+    """
+    if not alerts:
+        return []
+    WINDOW = 600  # seconds between alerts to chain into one incident
+    by_source: dict[str, list[dict]] = defaultdict(list)
+    for a in alerts:
+        src = a.get("source_ip")
+        if not src or a.get("severity") == "info":
+            continue
+        by_source[src].append(a)
+
+    incidents: list[dict] = []
+    for src, src_alerts in by_source.items():
+        src_alerts.sort(key=lambda a: a.get("timestamp") or 0)
+        chain: list[dict] = [src_alerts[0]]
+        for a in src_alerts[1:]:
+            prev = chain[-1]
+            if (a.get("timestamp") or 0) - (prev.get("timestamp") or 0) <= WINDOW:
+                chain.append(a)
+            else:
+                incidents.append(_build_incident(src, chain))
+                chain = [a]
+        incidents.append(_build_incident(src, chain))
+
+    incidents.sort(key=lambda i: -i["max_score"])
+    return incidents
+
+
+def _build_incident(source_ip: str, alerts: list[dict]) -> dict:
+    rules = sorted({a["rule_name"] for a in alerts})
+    max_score = max(a["score"] for a in alerts)
+    by_sev: Counter = Counter(a["severity"] for a in alerts)
+    top_sev = next(
+        (s for s in ("critical", "high", "medium", "low", "info") if by_sev.get(s)),
+        "info",
+    )
+    ts_min = min((a.get("timestamp") or 0) for a in alerts)
+    ts_max = max((a.get("timestamp") or 0) for a in alerts)
+    return {
+        "source_ip": source_ip,
+        "rule_names": rules,
+        "alert_count": len(alerts),
+        "max_score": max_score,
+        "severity": top_sev,
+        "first_seen": ts_min,
+        "last_seen": ts_max,
+        "alert_ids": [a.get("id") for a in alerts if a.get("id")],
+        "title": f"Incident on {source_ip}: {' + '.join(rules)}",
+        "story": (
+            f"Host {source_ip} triggered {len(alerts)} alert(s) ({', '.join(rules)}) "
+            f"over {ts_max - ts_min:.0f}s — correlated activity suggests a single campaign "
+            f"rather than isolated events."
+        ),
+    }
 
 
 class SuspicionEngine:
@@ -501,6 +986,7 @@ class SuspicionEngine:
         flows: list[dict],
         dns_txns: list[dict],
         id_by_flow: dict[int, str] | None = None,
+        http_txns: list[dict] | None = None,
     ) -> list[dict]:
         """id_by_flow: optional mapping to REAL persisted flow ids (by object identity)."""
         # tag each flow dict with its persisted id so rules can cross-reference
@@ -518,6 +1004,14 @@ class SuspicionEngine:
         results += rule_excessive_failures(flows)
         results += rule_connection_without_dns(flows, dns_txns)
         results += rule_high_outbound_volume(flows)
+        # Phase 2 rules
+        results += rule_arp_spoofing(parsed)
+        results += rule_lateral_movement(flows)
+        results += rule_dga_domains(dns_txns)
+        results += rule_data_exfiltration(flows, dns_txns)
+        results += rule_low_slow_beaconing(flows)
+        if http_txns is not None:
+            results += rule_suspicious_user_agent(http_txns)
 
         alert_dicts = []
         for r in results:

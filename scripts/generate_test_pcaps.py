@@ -14,7 +14,7 @@ import random
 import sys
 from pathlib import Path
 
-from scapy.all import IP, Ether, TCP, UDP, wrpcap
+from scapy.all import ARP, IP, Ether, TCP, UDP, wrpcap
 from scapy.layers.dns import DNS, DNSQR, DNSRR
 
 BASE_TS = 1717252200.0
@@ -23,6 +23,10 @@ HOSTS = {
     "workstation": "192.168.1.42",
     "web_server": "192.168.1.25",
     "dns_server": "192.168.1.1",
+    "file_server": "192.168.1.10",
+    "dc_server": "192.168.1.5",
+    "hr_host": "192.168.1.60",
+    "it_host": "192.168.1.61",
     "ext_web": "93.184.216.34",
     "ext_api": "140.82.121.6",
     "suspicious": "185.234.72.19",
@@ -31,6 +35,7 @@ HOSTS = {
 
 MAC_LOCAL = "aa:bb:cc:dd:ee:01"
 MAC_REMOTE = "aa:bb:cc:dd:ee:02"
+MAC_ATTACKER = "aa:bb:cc:dd:ee:99"  # ARP spoofer's NIC
 
 
 def _eth(src_ip: str) -> "Ether":
@@ -219,12 +224,124 @@ def scenario_tcp_problems() -> list:
     return pkts
 
 
+def scenario_arp_spoofing() -> list:
+    """ARP spoofing: attacker MAC claims the gateway IP; gratuitous ARP announces."""
+    pkts = []
+    gw_ip = HOSTS["dns_server"]  # 192.168.1.1 — the gateway
+    victim = HOSTS["workstation"]
+    victim_mac = MAC_LOCAL
+    attacker_mac = MAC_ATTACKER
+    gw_mac = "aa:bb:cc:dd:ee:03"
+
+    # normal ARP resolution: victim asks who-has gateway, gateway replies (layer 2 only)
+    t = BASE_TS
+    pkts.append(Ether(src=victim_mac, dst="ff:ff:ff:ff:ff:ff", type=0x0806) / ARP(op=1, hwsrc=victim_mac, psrc=victim, pdst=gw_ip))
+    pkts[-1].time = t
+    pkts.append(Ether(src=gw_mac, dst=victim_mac, type=0x0806) / ARP(op=2, hwsrc=gw_mac, psrc=gw_ip, hwdst=victim_mac, pdst=victim))
+    pkts[-1].time = t + 0.05
+
+    # attacker poisons: gratuitous ARP announcing gateway IP with ATTACKER MAC (x5)
+    for i in range(5):
+        ts = BASE_TS + 10 + i * 2
+        pkt = Ether(src=attacker_mac, dst="ff:ff:ff:ff:ff:ff", type=0x0806) / ARP(op=2, hwsrc=attacker_mac, psrc=gw_ip, pdst=gw_ip)
+        pkt.time = ts
+        pkts.append(pkt)
+    # legit gateway re-announces (conflict visible: same IP, two MACs)
+    pkt = Ether(src=gw_mac, dst="ff:ff:ff:ff:ff:ff", type=0x0806) / ARP(op=2, hwsrc=gw_mac, psrc=gw_ip, pdst=gw_ip)
+    pkt.time = BASE_TS + 25
+    pkts.append(pkt)
+    pkts.sort(key=lambda p: float(p.time))
+    return pkts
+
+
+def scenario_lateral_movement() -> list:
+    """Compromised host touching many internal hosts on SSH/SMB/RDP."""
+    pkts = []
+    attacker = HOSTS["workstation"]
+    targets = [HOSTS["web_server"], HOSTS["file_server"], HOSTS["dc_server"], HOSTS["hr_host"], HOSTS["it_host"]]
+    ports = [22, 445, 3389, 22, 5985]
+    for i, (target, dport) in enumerate(zip(targets, ports)):
+        ts = BASE_TS + i * 30
+        sport = 46000 + i
+        pkts.append(tcp_syn(ts, attacker, target, sport, dport, seq=9000 + i))
+        pkts.append(tcp_synack(ts + 0.1, target, attacker, dport, sport, seq=9100 + i, ack=9001 + i))
+    pkts.sort(key=lambda p: float(p.time))
+    return pkts
+
+
+def scenario_data_exfiltration() -> list:
+    """Large outbound transfer to an unrare (never-DNS-resolved) external host."""
+    pkts = []
+    ws = HOSTS["workstation"]
+    dest = "203.0.113.66"  # external, never resolved via DNS in this capture
+    # a few normal DNS queries for cover (resolving popular hosts)
+    for i, domain in enumerate(["example.com"]):
+        ts = BASE_TS + i * 5
+        sport = 33500 + i
+        pkts.append(dns_query(ts, ws, HOSTS["dns_server"], domain, 3000 + i))
+        pkts.append(dns_response(ts + 0.02, HOSTS["dns_server"], ws, domain, 3000 + i))
+    # big transfer: 400 packets x ~1400 bytes ≈ 560KB to dest in 20s, one long flow
+    sport = 47000
+    chunk = b"E" * 1400
+    pkts.append(tcp_syn(BASE_TS + 10, ws, dest, sport, 8443, seq=10000))
+    pkts.append(tcp_synack(BASE_TS + 10.05, dest, ws, 8443, sport, seq=20000, ack=10001))
+    for i in range(400):
+        ts = BASE_TS + 10.1 + i * 0.05
+        pkts.append(tcp_ack(ts, ws, dest, sport, 8443, seq=10001 + i * 1400, ack=20001, payload=chunk))
+    pkts.sort(key=lambda p: float(p.time))
+    return pkts
+
+
+def scenario_low_slow_beacon() -> list:
+    """Low-and-slow C2: 4 check-ins at regular 5-minute intervals on 443."""
+    pkts = []
+    ws, c2 = HOSTS["workstation"], "198.51.100.77"
+    for i in range(4):
+        ts = BASE_TS + i * 300.0  # every 300s (5 min), 3 intervals, jitter ~0
+        sport = 48000 + i
+        pkts.append(tcp_syn(ts, ws, c2, sport, 443, seq=11000 + i))
+        pkts.append(tcp_synack(ts + 0.05, c2, ws, 443, sport, seq=12000 + i, ack=11001 + i))
+        pkts.append(tcp_ack(ts + 0.06, ws, c2, sport, 443, seq=11001 + i, ack=12001 + i, payload=b"\x00\x00keepalive"))
+    pkts.sort(key=lambda p: float(p.time))
+    return pkts
+
+
+def scenario_dga_domains() -> list:
+    """DGA malware: many high-entropy NXDOMAIN lookups + real domains as baseline."""
+    pkts = []
+    ws, dns_srv = HOSTS["workstation"], HOSTS["dns_server"]
+    rng = random.Random(1337)
+    # 5 real domains first (baseline traffic, all readable)
+    for i, domain in enumerate(["example.com", "wikipedia.org", "github.com", "cloudflare.com", "debian.org"]):
+        ts = BASE_TS + i
+        sport = 33600 + i
+        pkts.append(dns_query(ts, ws, dns_srv, domain, 4000 + i))
+        pkts.append(dns_response(ts + 0.02, dns_srv, ws, domain, 4000 + i))
+    # 20 DGA lookups: consonant-heavy random labels, most NXDOMAIN
+    tld = ["com", "net", "xyz", "top", "info"]
+    for i in range(20):
+        ts = BASE_TS + 10 + i * 2
+        sport = 33700 + i
+        label = "".join(rng.choices("bcdfghjklmnpqrstvwxz", k=12)) + "".join(rng.choices("aeiou", k=1)) + "zxq"
+        name = f"{label}.{tld[i % len(tld)]}"
+        pkts.append(dns_query(ts, ws, dns_srv, name, 4100 + i))
+        rcode = 3 if i % 4 != 3 else 0  # most fail; one in four resolves (rotating DGA)
+        pkts.append(dns_response(ts + 0.03, dns_srv, ws, name, 4100 + i, rcode=rcode))
+    pkts.sort(key=lambda p: float(p.time))
+    return pkts
+
+
 SCENARIOS = {
     "normal_traffic.pcap": scenario_normal_traffic,
     "port_scan.pcap": scenario_port_scan,
     "dns_tunneling.pcap": scenario_dns_tunneling,
     "c2_beacon.pcap": scenario_c2_beacon,
     "tcp_problems.pcap": scenario_tcp_problems,
+    "arp_spoofing.pcap": scenario_arp_spoofing,
+    "lateral_movement.pcap": scenario_lateral_movement,
+    "data_exfiltration.pcap": scenario_data_exfiltration,
+    "low_slow_beacon.pcap": scenario_low_slow_beacon,
+    "dga_domains.pcap": scenario_dga_domains,
 }
 
 

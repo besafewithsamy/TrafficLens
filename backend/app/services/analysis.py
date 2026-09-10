@@ -28,7 +28,7 @@ from app.repositories import (
 from app.services.flow_builder import FlowBuilder
 from app.services.host_profiler import HostProfiler
 from app.services.protocol_extractor import extract_dns, extract_http, extract_tls, protocol_statistics
-from app.services.suspicion_engine import SuspicionEngine
+from app.services.suspicion_engine import SuspicionEngine, correlate_alerts
 from app.services.timeline_graph import build_timeline
 
 ProgressCallback = Callable[[int, int, str], None]
@@ -117,7 +117,9 @@ class AnalysisService:
 
             # ---- Suspicion engine (Step 4) — flows already have DB ids ----
             self.jobs.update(job, stage="behavioral_analysis", progress=98)
-            alert_dicts = SuspicionEngine().run(parsed, flow_dicts, dns_txns, id_by_flow)
+            alert_dicts = SuspicionEngine().run(
+                parsed, flow_dicts, dns_txns, id_by_flow, http_txns=http_txns
+            )
             SuspicionEngine.augment_hosts(host_dicts, alert_dicts)
 
             # Persist alerts BEFORE timeline so events reference real alert ids
@@ -140,7 +142,7 @@ class AnalysisService:
                 dns_txns=dns_txns, http_txns=http_txns, tls_sessions=tls_sessions,
                 host_dicts=host_dicts, alert_dicts=alert_dicts,
                 flow_dicts_for_summary=flow_dicts, event_dicts=event_dicts,
-                alerts_already_persisted=True,
+                alerts_already_persisted=True, alert_id_map=alert_id_map,
             )
 
             self.jobs.update(
@@ -190,6 +192,7 @@ class AnalysisService:
         flow_dicts_for_summary: list[dict] | None = None,
         event_dicts: list[dict] | None = None,
         alerts_already_persisted: bool = False,
+        alert_id_map: dict[int, str] | None = None,
     ) -> None:
         packets = parsed.packets
         timestamps = [p.timestamp for p in packets]
@@ -289,6 +292,12 @@ class AnalysisService:
                 "by_rule": dict(Counter(a["rule_name"] for a in alert_dicts)),
                 "max_score": max((a["score"] for a in alert_dicts), default=0),
             }
+            # correlated incidents (Phase 2)
+            persisted_alerts = [
+                {**a, "id": alert_id_map.get(id(a))} if alert_id_map.get(id(a)) else a
+                for a in alert_dicts
+            ] if alert_id_map else alert_dicts
+            summary["incidents"] = correlate_alerts(persisted_alerts)[:20]
         if event_dicts is not None:
             summary["timeline_summary"] = {
                 "total_events": len(event_dicts),

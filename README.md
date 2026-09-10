@@ -41,14 +41,22 @@ Current detections include:
 
 * Port scanning
 * C2-style beaconing
+* Low-and-slow beaconing (long-interval periodic check-ins)
 * DNS tunneling indicators
+* DGA (algorithmically-generated domain) indicators
 * NXDOMAIN bursts
+* ARP spoofing (IP claimed by multiple MACs)
+* Lateral movement (internal fan-out on admin ports)
+* Data exfiltration (volume + first-contact correlation)
 * Suspicious ports
 * Excessive connection failures
 * Direct-IP connections without DNS
 * Unusually high outbound traffic
+* Suspicious user agents
 
 Each alert provides a score, severity, explanation, detection reasons, supporting evidence, and related flows.
+
+Related alerts are also correlated into **incidents** — per-host groups of alerts that belong to one campaign — with a plain-English story of what happened.
 
 ### Timeline, Graph & Replay
 
@@ -131,7 +139,12 @@ The generator includes scenarios such as:
 * Port scanning
 * DNS tunneling
 * C2-style beaconing
+* Low-and-slow beaconing
 * TCP connection problems
+* ARP spoofing
+* Lateral movement
+* Data exfiltration
+* DGA domains
 
 ## Architecture
 

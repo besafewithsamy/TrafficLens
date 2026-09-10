@@ -46,6 +46,18 @@ export interface CaptureSummary {
     by_rule: Record<string, number>
     max_score: number
   }
+  incidents?: {
+    source_ip: string
+    rule_names: string[]
+    alert_count: number
+    max_score: number
+    severity: 'critical' | 'high' | 'medium' | 'low' | 'info'
+    first_seen: number
+    last_seen: number
+    alert_ids: (string | null)[]
+    title: string
+    story: string
+  }[]
   top_flows_by_bytes?: {
     source_ip: string
     destination_ip: string
