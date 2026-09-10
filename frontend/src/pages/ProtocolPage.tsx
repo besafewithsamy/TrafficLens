@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { formatBytes, formatTime } from '../components/ui'
 import type { ProtocolStats } from '../types/api'
@@ -105,7 +105,7 @@ function DnsTable({ captureId }: { captureId: string }) {
   const [domain, setDomain] = useState('')
   const [nxdomainOnly, setNxdomainOnly] = useState(false)
 
-  const { data: txns, isLoading } = useQuery({
+  const { data: txns, isLoading, isError } = useQuery({
     queryKey: ['dns', captureId, domain, nxdomainOnly],
     queryFn: () => api.listDns(captureId, { domain: domain || undefined, rcode: nxdomainOnly ? 3 : undefined }),
   })
@@ -130,7 +130,7 @@ function DnsTable({ captureId }: { captureId: string }) {
           NXDOMAIN only
         </button>
       </div>
-      <TableShell count={txns?.length ?? 0} headers={['Time', 'Client', 'Query', 'Type', 'Answers', 'RCode', 'Latency']} loading={isLoading}>
+      <TableShell count={txns?.length ?? 0} headers={['Time', 'Client', 'Query', 'Type', 'Answers', 'RCode', 'Latency']} loading={isLoading} error={isError}>
         {(txns ?? []).slice(0, 200).map((t) => (
           <tr key={t.id} className="border-t border-slate-800/60 hover:bg-slate-800/30">
             <Td className="font-mono text-xs text-slate-500">{formatTime(t.timestamp)}</Td>
@@ -189,7 +189,7 @@ function HttpStats({ stats }: { stats: { transactions: number; status_codes: Rec
 
 function HttpTable({ captureId }: { captureId: string }) {
   const [hostFilter, setHostFilter] = useState('')
-  const { data: txns, isLoading } = useQuery({
+  const { data: txns, isLoading, isError } = useQuery({
     queryKey: ['http', captureId, hostFilter],
     queryFn: () => api.listHttp(captureId, { host: hostFilter || undefined }),
   })
@@ -204,7 +204,7 @@ function HttpTable({ captureId }: { captureId: string }) {
           className="w-64 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200 placeholder-slate-600 focus:border-violet-500/50 focus:outline-none"
         />
       </div>
-      <TableShell count={txns?.length ?? 0} headers={['Time', 'Method', 'Host', 'Path', 'Status', 'UA', 'Size']} loading={isLoading}>
+      <TableShell count={txns?.length ?? 0} headers={['Time', 'Method', 'Host', 'Path', 'Status', 'UA', 'Size']} loading={isLoading} error={isError}>
         {(txns ?? []).slice(0, 200).map((t) => (
           <tr key={t.id} className="border-t border-slate-800/60 hover:bg-slate-800/30">
             <Td className="font-mono text-xs text-slate-500">{formatTime(t.timestamp)}</Td>
@@ -241,7 +241,7 @@ function HttpTable({ captureId }: { captureId: string }) {
 
 function TlsTable({ captureId }: { captureId: string }) {
   const [sniFilter, setSniFilter] = useState('')
-  const { data: sessions, isLoading } = useQuery({
+  const { data: sessions, isLoading, isError } = useQuery({
     queryKey: ['tls', captureId, sniFilter],
     queryFn: () => api.listTls(captureId, { sni: sniFilter || undefined }),
   })
@@ -256,7 +256,7 @@ function TlsTable({ captureId }: { captureId: string }) {
           className="w-64 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200 placeholder-slate-600 focus:border-violet-500/50 focus:outline-none"
         />
       </div>
-      <TableShell count={sessions?.length ?? 0} headers={['First Seen', 'Client', 'Server', 'SNI', 'Bytes', 'Packets']} loading={isLoading}>
+      <TableShell count={sessions?.length ?? 0} headers={['First Seen', 'Client', 'Server', 'SNI', 'Bytes', 'Packets']} loading={isLoading} error={isError}>
         {(sessions ?? []).map((s) => (
           <tr key={s.id} className="border-t border-slate-800/60 hover:bg-slate-800/30">
             <Td className="font-mono text-xs text-slate-500">{formatTime(s.first_seen)}</Td>
@@ -304,17 +304,34 @@ function TableShell({
   headers,
   count,
   loading,
+  error,
   children,
 }: {
   headers: string[]
   count: number
   loading?: boolean
+  error?: boolean
   children: React.ReactNode
 }) {
+  const queryClient = useQueryClient()
   return (
     <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
       <div className="border-b border-slate-800 px-4 py-3 text-sm text-slate-400">
-        {loading ? 'Loading…' : `${count.toLocaleString()} records`}
+        {error ? (
+          <span className="flex items-center gap-3 text-red-400">
+            Failed to load records.
+            <button
+              onClick={() => queryClient.invalidateQueries()}
+              className="rounded-lg bg-slate-800 px-3 py-1 text-xs text-slate-300 ring-1 ring-slate-700 hover:text-slate-100"
+            >
+              Retry
+            </button>
+          </span>
+        ) : loading ? (
+          'Loading…'
+        ) : (
+          `${count.toLocaleString()} records`
+        )}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">

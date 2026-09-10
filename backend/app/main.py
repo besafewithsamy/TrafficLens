@@ -1,4 +1,4 @@
-"""NetScope FastAPI application entry point."""
+"""TrafficLens FastAPI application entry point."""
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -23,7 +23,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
-    description="Network Intelligence, Traffic Investigation & Network Engineering Platform",
+    description="Network traffic analysis and investigation platform",
     lifespan=lifespan,
 )
 

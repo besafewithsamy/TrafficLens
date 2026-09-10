@@ -38,7 +38,7 @@ export function TimelinePage() {
   const analyzed = (captures ?? []).filter((c) => c.status === 'completed')
   const effectiveCaptureId = captureId ?? analyzed[0]?.id ?? null
 
-  const { data: events, isLoading } = useQuery({
+  const { data: events, isLoading, isError } = useQuery({
     queryKey: ['timeline', effectiveCaptureId, host, eventType, severity],
     queryFn: () =>
       api.getTimeline(effectiveCaptureId!, {
@@ -109,6 +109,10 @@ export function TimelinePage() {
       ) : isLoading ? (
         <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-slate-500">
           Building timeline…
+        </div>
+      ) : isError ? (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-red-400">
+          Failed to load timeline events. Please try again.
         </div>
       ) : !events?.length ? (
         <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-slate-500">

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import cytoscape, { type Core, type ElementDefinition } from 'cytoscape'
+import cytoscape, { type ElementDefinition } from 'cytoscape'
 import { api } from '../api/client'
 import { formatBytes } from '../components/ui'
 import type { GraphNodeData } from '../types/api'
@@ -25,7 +25,6 @@ const EDGE_COLORS: Record<string, string> = {
 export function GraphPage() {
   const [captureId, setCaptureId] = useState<string | null>(null)
   const [selectedNode, setSelectedNode] = useState<GraphNodeData | null>(null)
-  const cyRef = useRef<Core | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
   const { data: captures } = useQuery({
@@ -36,7 +35,7 @@ export function GraphPage() {
   const analyzed = (captures ?? []).filter((c) => c.status === 'completed')
   const effectiveCaptureId = captureId ?? analyzed[0]?.id ?? null
 
-  const { data: graph } = useQuery({
+  const { data: graph, isError } = useQuery({
     queryKey: ['graph', effectiveCaptureId],
     queryFn: () => api.getGraph(effectiveCaptureId!),
     enabled: !!effectiveCaptureId,
@@ -105,10 +104,8 @@ export function GraphPage() {
     })
     cy.on('tap', 'edge', () => setSelectedNode(null))
 
-    cyRef.current = cy
     return () => {
       cy.destroy()
-      cyRef.current = null
     }
   }, [graph])
 
@@ -161,50 +158,54 @@ export function GraphPage() {
 
         {!graph && (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-500">
-            {analyzed.length ? 'Building graph…' : 'No analyzed captures yet.'}
+            {isError
+              ? 'Failed to build graph. Please try again.'
+              : analyzed.length
+                ? 'Building graph…'
+                : 'No analyzed captures yet.'}
+          </div>
+        )}
+
+        {/* Node detail panel */}
+        {selectedNode && (
+          <div className="absolute right-3 top-3 z-10 w-72 rounded-xl border border-slate-700 bg-slate-900/95 p-4 shadow-xl">
+            <div className="mb-2 flex items-start justify-between">
+              <div className="font-mono text-sm font-semibold text-slate-100">
+                {selectedNode.id}
+              </div>
+              <button onClick={() => setSelectedNode(null)} className="text-slate-500">
+                ✕
+              </button>
+            </div>
+            <div className="space-y-1.5 text-xs">
+              <Row label="Type" value={selectedNode.type ?? '—'} />
+              {selectedNode.hostname && <Row label="Hostname" value={selectedNode.hostname} />}
+              {selectedNode.role && <Row label="Role" value={selectedNode.role} />}
+              {selectedNode.type === 'host' && (
+                <>
+                  <Row
+                    label="Traffic"
+                    value={`↑ ${formatBytes(selectedNode.bytes_sent ?? 0)} · ↓ ${formatBytes(
+                      selectedNode.bytes_received ?? 0,
+                    )}`}
+                  />
+                  <Row
+                    label="Alerts"
+                    value={String(selectedNode.alert_count ?? 0)}
+                    tone={(selectedNode.alert_count ?? 0) > 0 ? 'red' : undefined}
+                  />
+                </>
+              )}
+              {selectedNode.type === 'service' && (
+                <>
+                  <Row label="Service" value={selectedNode.service ?? '—'} />
+                  <Row label="Port" value={String(selectedNode.port ?? '—')} />
+                </>
+              )}
+            </div>
           </div>
         )}
       </div>
-
-      {/* Node detail panel */}
-      {selectedNode && (
-        <div className="absolute right-3 top-3 w-72 rounded-xl border border-slate-700 bg-slate-900/95 p-4 shadow-xl">
-          <div className="mb-2 flex items-start justify-between">
-            <div className="font-mono text-sm font-semibold text-slate-100">
-              {selectedNode.id}
-            </div>
-            <button onClick={() => setSelectedNode(null)} className="text-slate-500">
-              ✕
-            </button>
-          </div>
-          <div className="space-y-1.5 text-xs">
-            <Row label="Type" value={selectedNode.type ?? '—'} />
-            {selectedNode.hostname && <Row label="Hostname" value={selectedNode.hostname} />}
-            {selectedNode.role && <Row label="Role" value={selectedNode.role} />}
-            {selectedNode.type === 'host' && (
-              <>
-                <Row
-                  label="Traffic"
-                  value={`↑ ${formatBytes(selectedNode.bytes_sent ?? 0)} · ↓ ${formatBytes(
-                    selectedNode.bytes_received ?? 0,
-                  )}`}
-                />
-                <Row
-                  label="Alerts"
-                  value={String(selectedNode.alert_count ?? 0)}
-                  tone={(selectedNode.alert_count ?? 0) > 0 ? 'red' : undefined}
-                />
-              </>
-            )}
-            {selectedNode.type === 'service' && (
-              <>
-                <Row label="Service" value={selectedNode.service ?? '—'} />
-                <Row label="Port" value={String(selectedNode.port ?? '—')} />
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

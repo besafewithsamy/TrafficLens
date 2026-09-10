@@ -185,8 +185,8 @@ TrafficLens/
 ├── frontend/
 │   └── src/
 │       ├── api/
+│       ├── components/
 │       ├── pages/
-│       ├── stores/
 │       └── types/
 │
 ├── scripts/
@@ -253,6 +253,3 @@ TrafficLens is an evolving project. Contributions, ideas, bug reports, and impro
 If you have an idea that could make network traffic easier to understand or investigate, feel free to open an issue or submit a pull request.
 
 
-
-```
-```

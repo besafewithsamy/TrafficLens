@@ -19,7 +19,6 @@ class JobManager:
     def __init__(self) -> None:
         self._threads: dict[str, threading.Thread] = {}
         self._lock = threading.Lock()
-        self._listeners: dict[str, list] = {}  # job_id -> list of queue.Queue
 
     def submit(
         self, capture_id: str, job_id: str, file_path: str | None, parser_name: str | None

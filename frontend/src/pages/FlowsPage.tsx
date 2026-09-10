@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createColumnHelper,
   flexRender,
@@ -298,7 +298,8 @@ function FlowsTable({ flows, onSelect }: { flows: Flow[]; onSelect: (id: string)
 }
 
 function FlowEvidenceModal({ flowId, onClose }: { flowId: string; onClose: () => void }) {
-  const { data: flow, isLoading } = useQuery({
+  const queryClient = useQueryClient()
+  const { data: flow, isLoading, isError } = useQuery({
     queryKey: ['flow', flowId],
     queryFn: () => api.getFlow(flowId),
   })
@@ -346,7 +347,17 @@ function FlowEvidenceModal({ flowId, onClose }: { flowId: string; onClose: () =>
         </div>
 
         <div className="max-h-[70vh] overflow-y-auto">
-          {isLoading || !flow ? (
+          {isError ? (
+            <div className="p-12 text-center text-sm text-red-400">
+              Failed to load packet evidence.
+              <button
+                onClick={() => queryClient.invalidateQueries({ queryKey: ['flow', flowId] })}
+                className="ml-3 rounded-lg bg-slate-800 px-3 py-1 text-xs text-slate-300 ring-1 ring-slate-700 hover:text-slate-100"
+              >
+                Retry
+              </button>
+            </div>
+          ) : isLoading || !flow ? (
             <div className="p-12 text-center text-sm text-slate-500">Loading packet evidence…</div>
           ) : (
             <table className="w-full text-sm">

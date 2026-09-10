@@ -112,6 +112,9 @@ export function AlertsPage() {
               expanded={expanded === alert.id}
               onToggle={() => setExpanded(expanded === alert.id ? null : alert.id)}
               onAck={(v) => ack.mutate({ id: alert.id, acknowledged: v })}
+              ackPending={
+                ack.isPending && ack.variables?.id === alert.id
+              }
             />
           ))}
         </div>
@@ -125,11 +128,13 @@ function AlertCard({
   expanded,
   onToggle,
   onAck,
+  ackPending,
 }: {
   alert: Alert
   expanded: boolean
   onToggle: () => void
   onAck: (v: boolean) => void
+  ackPending?: boolean
 }) {
   const style = SEVERITY_STYLE[alert.severity] ?? SEVERITY_STYLE.info
 
@@ -256,13 +261,20 @@ function AlertCard({
                 e.stopPropagation()
                 onAck(!alert.acknowledged)
               }}
+              disabled={ackPending}
               className={`rounded-lg px-3 py-1.5 text-xs font-medium ring-1 transition ${
-                alert.acknowledged
-                  ? 'bg-slate-800 text-slate-400 ring-slate-700 hover:text-slate-200'
-                  : 'bg-emerald-500/10 text-emerald-300 ring-emerald-500/30 hover:bg-emerald-500/20'
+                ackPending
+                  ? 'cursor-wait bg-slate-800/50 text-slate-500 ring-slate-700'
+                  : alert.acknowledged
+                    ? 'bg-slate-800 text-slate-400 ring-slate-700 hover:text-slate-200'
+                    : 'bg-emerald-500/10 text-emerald-300 ring-emerald-500/30 hover:bg-emerald-500/20'
               }`}
             >
-              {alert.acknowledged ? 'Un-acknowledge' : '✓ Acknowledge'}
+              {ackPending
+                ? 'Saving…'
+                : alert.acknowledged
+                  ? 'Un-acknowledge'
+                  : '✓ Acknowledge'}
             </button>
             {alert.related_flow_ids.length > 0 && (
               <span className="text-xs text-slate-500">

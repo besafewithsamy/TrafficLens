@@ -4,7 +4,9 @@ export function StatusPill({ status }: { status: string }) {
     analyzing: 'bg-amber-500/10 text-amber-400 ring-amber-500/30',
     queued: 'bg-sky-500/10 text-sky-400 ring-sky-500/30',
     created: 'bg-slate-500/10 text-slate-400 ring-slate-500/30',
+    stopped: 'bg-orange-500/10 text-orange-400 ring-orange-500/30',
     failed: 'bg-red-500/10 text-red-400 ring-red-500/30',
+    cancelled: 'bg-slate-500/10 text-slate-400 ring-slate-500/30',
     running: 'bg-amber-500/10 text-amber-400 ring-amber-500/30',
   }
   return (

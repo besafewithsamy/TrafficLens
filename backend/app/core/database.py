@@ -15,9 +15,11 @@ class Base(DeclarativeBase):
     pass
 
 
-def _fk_pragma_on_connect(dbapi_con, _con_record):  # SQLite FK enforcement
+def _fk_pragma_on_connect(dbapi_con, _con_record):  # SQLite FK enforcement + WAL
     if hasattr(dbapi_con, "execute"):
         dbapi_con.execute("pragma foreign_keys=ON")
+        dbapi_con.execute("pragma journal_mode=WAL")  # concurrent reads during job writes
+        dbapi_con.execute("pragma busy_timeout=5000")  # ms to wait for locks instead of failing
 
 
 def make_engine(url: str | None = None) -> Engine:
