@@ -1,5 +1,4 @@
-
-# TrafficLens
+![Logo](assets/Logo.png)
 
 **Network traffic analysis and investigation, built around understanding what happened.**
 
