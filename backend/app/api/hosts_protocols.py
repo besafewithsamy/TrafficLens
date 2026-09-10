@@ -1,38 +1,29 @@
 """Host + protocol endpoints: hosts list/detail, DNS/HTTP/TLS transactions, protocol stats."""
 from __future__ import annotations
 
-from pathlib import Path
-
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.captures import get_stored_path
+from app.api.common import capture_or_404
 from app.core.database import get_db
-from app.db.orm import CaptureModel
-from app.parsers import resolve_parser
 from app.repositories import (
     DNSRepository,
     HTTPRepository,
     HostRepository,
+    PacketRepository,
     TLSRepository,
 )
 from app.schemas.api import (
     DNSTransactionOut,
     HTTPTransactionOut,
     HostOut,
+    Page,
     ProtocolStatsOut,
     TLSSessionOut,
 )
 from app.services.protocol_extractor import protocol_statistics
 
 router = APIRouter(prefix="/api", tags=["hosts-protocols"])
-
-
-def _capture_or_404(db: Session, capture_id: str) -> CaptureModel:
-    capture = db.get(CaptureModel, capture_id)
-    if capture is None:
-        raise HTTPException(404, "Capture not found")
-    return capture
 
 
 # ---------------- Hosts ----------------
@@ -42,10 +33,10 @@ def _capture_or_404(db: Session, capture_id: str) -> CaptureModel:
 def list_hosts(
     capture_id: str,
     internal: bool | None = None,
-    limit: int = 200,
+    limit: int = Query(default=200, ge=1, le=1000),
     db: Session = Depends(get_db),
 ):
-    _capture_or_404(db, capture_id)
+    capture_or_404(db, capture_id)
     hosts = HostRepository(db).list_for_capture(capture_id)
     if internal is not None:
         hosts = [h for h in hosts if bool(h.is_internal) == internal]
@@ -64,58 +55,72 @@ def get_host(host_id: str, db: Session = Depends(get_db)):
 # ---------------- DNS ----------------
 
 
-@router.get("/protocols/dns", response_model=list[DNSTransactionOut])
+@router.get("/protocols/dns", response_model=Page)
 def list_dns(
     capture_id: str,
     domain: str | None = None,
     rcode: int | None = None,
-    limit: int = 500,
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
-    _capture_or_404(db, capture_id)
-    txns = DNSRepository(db).list_for_capture(capture_id)
-    if domain:
-        txns = [t for t in txns if domain.lower() in t.query_name.lower()]
-    if rcode is not None:
-        txns = [t for t in txns if t.rcode == rcode]
-    return txns[:limit]
+    capture_or_404(db, capture_id)
+    txns, total = DNSRepository(db).page_for_capture(
+        capture_id, limit=limit, offset=offset, domain=domain, rcode=rcode
+    )
+    return Page.of(
+        [DNSTransactionOut.model_validate(t) for t in txns],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
 
 
 # ---------------- HTTP ----------------
 
 
-@router.get("/protocols/http", response_model=list[HTTPTransactionOut])
+@router.get("/protocols/http", response_model=Page)
 def list_http(
     capture_id: str,
     host: str | None = None,
     status: int | None = None,
-    limit: int = 500,
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
-    _capture_or_404(db, capture_id)
-    txns = HTTPRepository(db).list_for_capture(capture_id)
-    if host:
-        txns = [t for t in txns if t.host and host.lower() in t.host.lower()]
-    if status is not None:
-        txns = [t for t in txns if t.status_code == status]
-    return txns[:limit]
+    capture_or_404(db, capture_id)
+    txns, total = HTTPRepository(db).page_for_capture(
+        capture_id, limit=limit, offset=offset, host=host, status=status
+    )
+    return Page.of(
+        [HTTPTransactionOut.model_validate(t) for t in txns],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
 
 
 # ---------------- TLS ----------------
 
 
-@router.get("/protocols/tls", response_model=list[TLSSessionOut])
+@router.get("/protocols/tls", response_model=Page)
 def list_tls(
     capture_id: str,
     sni: str | None = None,
-    limit: int = 500,
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
-    _capture_or_404(db, capture_id)
-    sessions = TLSRepository(db).list_for_capture(capture_id)
-    if sni:
-        sessions = [s for s in sessions if s.sni and sni.lower() in s.sni.lower()]
-    return sessions[:limit]
+    capture_or_404(db, capture_id)
+    sessions, total = TLSRepository(db).page_for_capture(
+        capture_id, limit=limit, offset=offset, sni=sni
+    )
+    return Page.of(
+        [TLSSessionOut.model_validate(s) for s in sessions],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
 
 
 # ---------------- Protocol stats (Module J) ----------------
@@ -123,12 +128,7 @@ def list_tls(
 
 @router.get("/protocols/stats", response_model=ProtocolStatsOut)
 def protocol_stats(capture_id: str, db: Session = Depends(get_db)):
-    """Protocol-centric 'what is this protocol doing?' summary."""
-    capture = _capture_or_404(db, capture_id)
-    stored = get_stored_path(db, capture.id)
-    if stored is None or not Path(stored).exists():
-        raise HTTPException(410, "Capture file no longer available for protocol stats")
-    parser = resolve_parser(None)
-    parsed = parser.parse_file(str(stored))
-    stats = protocol_statistics(parsed)
-    return stats
+    """Protocol stats served from the packet store (no PCAP re-parsing)."""
+    capture_or_404(db, capture_id)
+    parsed = PacketRepository(db).as_parsed_capture(capture_id)
+    return protocol_statistics(parsed)

@@ -9,6 +9,7 @@ import type {
   HTTPTransaction,
   Host,
   Job,
+  Page,
   ProtocolStats,
   TimelineEvent,
   TLSSession,
@@ -28,6 +29,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(detail)
   }
   return resp.json()
+}
+
+export interface Pagination {
+  limit?: number
+  offset?: number
+}
+
+function paged(params: URLSearchParams, page?: Pagination) {
+  if (page?.limit !== undefined) params.set('limit', String(page.limit))
+  if (page?.offset !== undefined) params.set('offset', String(page.offset))
+  return params
 }
 
 export const api = {
@@ -56,11 +68,36 @@ export const api = {
 
   listJobs: () => request<Job[]>('/jobs'),
 
-  listFlows: (captureId: string, filters?: { transport?: string; direction?: string }) => {
+  /** Subscribe to job progress over SSE; resolves snapshot updates + terminal state. */
+  streamJob: (id: string, onUpdate: (job: Job) => void, onDone: () => void) => {
+    const es = new EventSource(`${BASE}/jobs/${id}/events`)
+    es.onmessage = (ev) => {
+      const job = JSON.parse(ev.data) as Job
+      onUpdate(job)
+      if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+        es.close()
+        onDone()
+      }
+    }
+    es.onerror = () => {
+      // stream ended unexpectedly; fall back — caller can poll
+      es.close()
+      onDone()
+    }
+    return () => es.close()
+  },
+
+  listFlows: (
+    captureId: string,
+    filters?: { transport?: string; direction?: string; sort?: string; order?: string },
+    page?: Pagination,
+  ) => {
     const params = new URLSearchParams({ capture_id: captureId })
     if (filters?.transport) params.set('transport', filters.transport)
     if (filters?.direction) params.set('direction', filters.direction)
-    return request<Flow[]>(`/flows?${params}`)
+    if (filters?.sort) params.set('sort', filters.sort)
+    if (filters?.order) params.set('order', filters.order)
+    return request<Page<Flow>>(`/flows?${paged(params, page)}`)
   },
 
   getFlow: (id: string) => request<FlowDetail>(`/flows/${id}`),
@@ -75,24 +112,32 @@ export const api = {
   getHost: (id: string) => request<Host>(`/hosts/${id}`),
 
   // Protocols (Step 3)
-  listDns: (captureId: string, filters?: { domain?: string; rcode?: number }) => {
+  listDns: (
+    captureId: string,
+    filters?: { domain?: string; rcode?: number },
+    page?: Pagination,
+  ) => {
     const params = new URLSearchParams({ capture_id: captureId })
     if (filters?.domain) params.set('domain', filters.domain)
     if (filters?.rcode !== undefined) params.set('rcode', String(filters.rcode))
-    return request<DNSTransaction[]>(`/protocols/dns?${params}`)
+    return request<Page<DNSTransaction>>(`/protocols/dns?${paged(params, page)}`)
   },
 
-  listHttp: (captureId: string, filters?: { host?: string; status?: number }) => {
+  listHttp: (
+    captureId: string,
+    filters?: { host?: string; status?: number },
+    page?: Pagination,
+  ) => {
     const params = new URLSearchParams({ capture_id: captureId })
     if (filters?.host) params.set('host', filters.host)
     if (filters?.status !== undefined) params.set('status', String(filters.status))
-    return request<HTTPTransaction[]>(`/protocols/http?${params}`)
+    return request<Page<HTTPTransaction>>(`/protocols/http?${paged(params, page)}`)
   },
 
-  listTls: (captureId: string, filters?: { sni?: string }) => {
+  listTls: (captureId: string, filters?: { sni?: string }, page?: Pagination) => {
     const params = new URLSearchParams({ capture_id: captureId })
     if (filters?.sni) params.set('sni', filters.sni)
-    return request<TLSSession[]>(`/protocols/tls?${params}`)
+    return request<Page<TLSSession>>(`/protocols/tls?${paged(params, page)}`)
   },
 
   protocolStats: (captureId: string) =>
@@ -102,12 +147,13 @@ export const api = {
   listAlerts: (
     captureId: string,
     filters?: { severity?: string; minScore?: number; rule?: string },
+    page?: Pagination,
   ) => {
     const params = new URLSearchParams({ capture_id: captureId })
     if (filters?.severity) params.set('severity', filters.severity)
     if (filters?.minScore !== undefined) params.set('min_score', String(filters.minScore))
     if (filters?.rule) params.set('rule', filters.rule)
-    return request<Alert[]>(`/alerts?${params}`)
+    return request<Page<Alert>>(`/alerts?${paged(params, page)}`)
   },
 
   getAlert: (id: string) => request<Alert>(`/alerts/${id}`),
@@ -130,6 +176,7 @@ export const api = {
       after?: number
       before?: number
       limit?: number
+      offset?: number
     },
   ) => {
     const params = new URLSearchParams({ capture_id: captureId })
@@ -140,7 +187,8 @@ export const api = {
     if (filters?.after !== undefined) params.set('after', String(filters.after))
     if (filters?.before !== undefined) params.set('before', String(filters.before))
     if (filters?.limit !== undefined) params.set('limit', String(filters.limit))
-    return request<TimelineEvent[]>(`/timeline?${params}`)
+    if (filters?.offset !== undefined) params.set('offset', String(filters.offset))
+    return request<Page<TimelineEvent>>(`/timeline?${params}`)
   },
 
   getGraph: (captureId: string) => request<Graph>(`/graph?capture_id=${captureId}`),

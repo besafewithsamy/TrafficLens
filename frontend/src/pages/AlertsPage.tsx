@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
+import { CapturePicker } from '../components/CapturePicker'
+import { EmptyState, ErrorState, LoadingState } from '../components/states'
 import { formatTime } from '../components/ui'
+import { useSelectedCapture } from '../hooks/captures'
 import type { Alert } from '../types/api'
 
 const SEVERITY_STYLE: Record<string, { badge: string; bar: string; label: string }> = {
@@ -24,25 +27,19 @@ const RULE_LABELS: Record<string, string> = {
 }
 
 export function AlertsPage() {
-  const [captureId, setCaptureId] = useState<string | null>(null)
+  const { analyzed, effectiveCaptureId, setCaptureId } = useSelectedCapture()
   const [severity, setSeverity] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
-  const { data: captures } = useQuery({
-    queryKey: ['captures'],
-    queryFn: api.listCaptures,
-    refetchInterval: 5000,
-  })
-  const analyzed = (captures ?? []).filter((c) => c.status === 'completed')
-  const effectiveCaptureId = captureId ?? analyzed[0]?.id ?? null
-
-  const { data: alerts, isLoading } = useQuery({
+  const { data: page, isLoading, isError, refetch } = useQuery({
     queryKey: ['alerts', effectiveCaptureId, severity],
     queryFn: () =>
-      api.listAlerts(effectiveCaptureId!, { severity: severity || undefined }),
+      api.listAlerts(effectiveCaptureId!, { severity: severity || undefined }, { limit: 100 }),
     enabled: !!effectiveCaptureId,
   })
+
+  const alerts = page?.items ?? []
 
   const ack = useMutation({
     mutationFn: ({ id, acknowledged }: { id: string; acknowledged: boolean }) =>
@@ -63,17 +60,7 @@ export function AlertsPage() {
       </p>
 
       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
-        <select
-          value={effectiveCaptureId ?? ''}
-          onChange={(e) => setCaptureId(e.target.value || null)}
-          className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200"
-        >
-          {analyzed.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.filename}
-            </option>
-          ))}
-        </select>
+        <CapturePicker captures={analyzed} value={effectiveCaptureId} onChange={setCaptureId} />
         {['', 'critical', 'high', 'medium', 'low'].map((s) => (
           <button
             key={s}
@@ -91,14 +78,12 @@ export function AlertsPage() {
       </div>
 
       {!analyzed.length ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-slate-500">
-          No analyzed captures yet.
-        </div>
+        <EmptyState>No analyzed captures yet.</EmptyState>
       ) : isLoading ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-slate-500">
-          Running suspicion engine…
-        </div>
-      ) : !alerts?.length ? (
+        <LoadingState>Running suspicion engine…</LoadingState>
+      ) : isError ? (
+        <ErrorState message="Failed to load alerts." onRetry={() => refetch()} />
+      ) : !alerts.length ? (
         <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-12 text-center">
           <div className="text-3xl text-emerald-500">✓</div>
           <p className="mt-2 text-sm text-emerald-300">No alerts matched — traffic looks clean.</p>

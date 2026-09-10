@@ -1,4 +1,11 @@
 
+export interface Page<T> {
+  items: T[]
+  total: number
+  offset: number
+  limit: number
+}
+
 export interface Capture {
   id: string
   filename: string

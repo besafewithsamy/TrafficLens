@@ -16,7 +16,7 @@ def _analyze(client, pcap: str) -> str:
 
 def test_timeline_built_normal(client):
     capture_id = _analyze(client, "normal_traffic.pcap")
-    events = client.get(f"/api/timeline?capture_id={capture_id}").json()
+    events = client.get(f"/api/timeline?capture_id={capture_id}&limit=1000").json()["items"]
     types = [e["event_type"] for e in events]
     # chronological order
     ts = [e["timestamp"] for e in events]
@@ -40,7 +40,7 @@ def test_timeline_built_normal(client):
 
 def test_timeline_alerts_and_failures(client):
     capture_id = _analyze(client, "c2_beacon.pcap")
-    events = client.get(f"/api/timeline?capture_id={capture_id}").json()
+    events = client.get(f"/api/timeline?capture_id={capture_id}&limit=1000").json()["items"]
     types = [e["event_type"] for e in events]
     assert types.count("tcp_connect") == 40
     assert types.count("alert") == 3
@@ -56,13 +56,13 @@ def test_timeline_alerts_and_failures(client):
 def test_timeline_filters_host(client):
     capture_id = _analyze(client, "normal_traffic.pcap")
     # filter by source ip
-    events = client.get(f"/api/timeline?capture_id={capture_id}&host=192.168.1.42").json()
+    events = client.get(f"/api/timeline?capture_id={capture_id}&host=192.168.1.42&limit=1000").json()["items"]
     assert all(
         (e["source_ip"] == "192.168.1.42" or e["destination_ip"] == "192.168.1.42")
         for e in events
     )
     # filter by domain
-    events = client.get(f"/api/timeline?capture_id={capture_id}&host=github").json()
+    events = client.get(f"/api/timeline?capture_id={capture_id}&host=github&limit=1000").json()["items"]
     assert all(e["domain"] and "github" in e["domain"].lower() for e in events)
     assert len(events) >= 2  # query + response
 
@@ -70,25 +70,25 @@ def test_timeline_filters_host(client):
 def test_timeline_filters_protocol_type_severity_time(client):
     capture_id = _analyze(client, "c2_beacon.pcap")
     # protocol filter
-    events = client.get(f"/api/timeline?capture_id={capture_id}&protocol=tcp").json()
+    events = client.get(f"/api/timeline?capture_id={capture_id}&protocol=tcp&limit=1000").json()["items"]
     assert all("TCP" in (e["protocol"] or "").upper() for e in events if e["protocol"])
     # event type filter
-    events = client.get(f"/api/timeline?capture_id={capture_id}&event_type=alert").json()
+    events = client.get(f"/api/timeline?capture_id={capture_id}&event_type=alert&limit=1000").json()["items"]
     assert all(e["event_type"] == "alert" for e in events)
     # severity filter
-    events = client.get(f"/api/timeline?capture_id={capture_id}&severity=critical").json()
+    events = client.get(f"/api/timeline?capture_id={capture_id}&severity=critical&limit=1000").json()["items"]
     assert all(e["severity"] == "critical" for e in events)
     # time window: first 60s covers first two beacons
-    all_events = client.get(f"/api/timeline?capture_id={capture_id}").json()
+    all_events = client.get(f"/api/timeline?capture_id={capture_id}&limit=1000").json()["items"]
     t0 = all_events[0]["timestamp"]
-    events = client.get(f"/api/timeline?capture_id={capture_id}&after={t0}&before={t0 + 60}").json()
+    events = client.get(f"/api/timeline?capture_id={capture_id}&after={t0}&before={t0 + 60}&limit=1000").json()["items"]
     assert all(t0 <= e["timestamp"] <= t0 + 60 for e in events)
     assert len(events) < len(all_events)
 
 
 def test_timeline_failed_flows_marked(client):
     capture_id = _analyze(client, "port_scan.pcap")
-    events = client.get(f"/api/timeline?capture_id={capture_id}").json()
+    events = client.get(f"/api/timeline?capture_id={capture_id}&limit=1000").json()["items"]
     failed = [e for e in events if e["event_type"] == "flow_failed"]
     assert len(failed) == 100
     assert all(e["severity"] == "medium" for e in failed)

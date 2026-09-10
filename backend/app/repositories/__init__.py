@@ -1,7 +1,7 @@
 """Repository layer — isolates persistence from business logic."""
 from __future__ import annotations
 
-from sqlalchemy import delete, desc, select
+from sqlalchemy import delete, desc, func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import new_id
@@ -13,6 +13,7 @@ from app.db.orm import (
     FlowModel,
     HTTPTransactionModel,
     HostModel,
+    PacketModel,
     TLSSessionModel,
     TimelineEventModel,
 )
@@ -73,6 +74,34 @@ class FlowRepository:
         )
         return list(self.db.scalars(stmt))
 
+    def page_for_capture(
+        self,
+        capture_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        transport: str | None = None,
+        direction: str | None = None,
+        sort: str = "first_seen",
+        order: str = "asc",
+    ) -> tuple[list[FlowModel], int]:
+        """SQL-level filtered/paginated flows with total count."""
+        stmt = select(FlowModel).where(FlowModel.capture_id == capture_id)
+        if transport:
+            stmt = stmt.where(FlowModel.transport_protocol == transport.upper())
+        if direction:
+            stmt = stmt.where(FlowModel.direction == direction.lower())
+
+        total = self.db.scalar(
+            select(func.count()).select_from(FlowModel).where(stmt.whereclause)
+        )
+
+        sort_col = getattr(FlowModel, sort if hasattr(FlowModel, sort) else "first_seen", None)
+        if sort_col is None:
+            sort_col = FlowModel.first_seen
+        order_fn = desc if order == "desc" else lambda c: c.asc()
+        stmt = stmt.order_by(order_fn(sort_col)).limit(limit).offset(offset)
+        return list(self.db.scalars(stmt)), int(total or 0)
+
     def delete_for_capture(self, capture_id: str) -> int:
         from sqlalchemy import delete
 
@@ -122,6 +151,26 @@ class DNSRepository:
         )
         return list(self.db.scalars(stmt))
 
+    def page_for_capture(
+        self,
+        capture_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        domain: str | None = None,
+        rcode: int | None = None,
+    ) -> tuple[list[DNSTransactionModel], int]:
+        stmt = select(DNSTransactionModel).where(DNSTransactionModel.capture_id == capture_id)
+        if domain:
+            stmt = stmt.where(DNSTransactionModel.query_name.ilike(f"%{domain}%"))
+        if rcode is not None:
+            stmt = stmt.where(DNSTransactionModel.rcode == rcode)
+
+        total = self.db.scalar(
+            select(func.count()).select_from(DNSTransactionModel).where(stmt.whereclause)
+        )
+        stmt = stmt.order_by(DNSTransactionModel.timestamp).limit(limit).offset(offset)
+        return list(self.db.scalars(stmt)), int(total or 0)
+
     def delete_for_capture(self, capture_id: str) -> int:
         result = self.db.execute(
             delete(DNSTransactionModel).where(DNSTransactionModel.capture_id == capture_id)
@@ -148,6 +197,26 @@ class HTTPRepository:
         )
         return list(self.db.scalars(stmt))
 
+    def page_for_capture(
+        self,
+        capture_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        host: str | None = None,
+        status: int | None = None,
+    ) -> tuple[list[HTTPTransactionModel], int]:
+        stmt = select(HTTPTransactionModel).where(HTTPTransactionModel.capture_id == capture_id)
+        if host:
+            stmt = stmt.where(HTTPTransactionModel.host.ilike(f"%{host}%"))
+        if status is not None:
+            stmt = stmt.where(HTTPTransactionModel.status_code == status)
+
+        total = self.db.scalar(
+            select(func.count()).select_from(HTTPTransactionModel).where(stmt.whereclause)
+        )
+        stmt = stmt.order_by(HTTPTransactionModel.timestamp).limit(limit).offset(offset)
+        return list(self.db.scalars(stmt)), int(total or 0)
+
     def delete_for_capture(self, capture_id: str) -> int:
         result = self.db.execute(
             delete(HTTPTransactionModel).where(HTTPTransactionModel.capture_id == capture_id)
@@ -173,6 +242,23 @@ class TLSRepository:
             .order_by(TLSSessionModel.first_seen)
         )
         return list(self.db.scalars(stmt))
+
+    def page_for_capture(
+        self,
+        capture_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        sni: str | None = None,
+    ) -> tuple[list[TLSSessionModel], int]:
+        stmt = select(TLSSessionModel).where(TLSSessionModel.capture_id == capture_id)
+        if sni:
+            stmt = stmt.where(TLSSessionModel.sni.ilike(f"%{sni}%"))
+
+        total = self.db.scalar(
+            select(func.count()).select_from(TLSSessionModel).where(stmt.whereclause)
+        )
+        stmt = stmt.order_by(TLSSessionModel.first_seen).limit(limit).offset(offset)
+        return list(self.db.scalars(stmt)), int(total or 0)
 
     def delete_for_capture(self, capture_id: str) -> int:
         result = self.db.execute(
@@ -202,6 +288,33 @@ class AlertRepository:
             .order_by(desc(AlertModel.score))
         )
         return list(self.db.scalars(stmt))
+
+    def page_for_capture(
+        self,
+        capture_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        severity: str | None = None,
+        min_score: int | None = None,
+        rule: str | None = None,
+    ) -> tuple[list[AlertModel], int]:
+        stmt = select(AlertModel).where(AlertModel.capture_id == capture_id)
+        if severity:
+            stmt = stmt.where(AlertModel.severity == severity.lower())
+        if min_score is not None:
+            stmt = stmt.where(AlertModel.score >= min_score)
+        if rule:
+            stmt = stmt.where(AlertModel.rule_name == rule)
+
+        total = self.db.scalar(
+            select(func.count()).select_from(AlertModel).where(stmt.whereclause)
+        )
+        stmt = (
+            stmt.order_by(desc(AlertModel.score), desc(AlertModel.created_at))
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(self.db.scalars(stmt)), int(total or 0)
 
     def delete_for_capture(self, capture_id: str) -> int:
         result = self.db.execute(delete(AlertModel).where(AlertModel.capture_id == capture_id))
@@ -235,6 +348,45 @@ class TimelineRepository:
             .order_by(TimelineEventModel.timestamp)
         )
         return list(self.db.scalars(stmt))
+
+    def page_for_capture(
+        self,
+        capture_id: str,
+        limit: int = 200,
+        offset: int = 0,
+        host: str | None = None,
+        protocol: str | None = None,
+        event_type: str | None = None,
+        severity: str | None = None,
+        after: float | None = None,
+        before: float | None = None,
+    ) -> tuple[list[TimelineEventModel], int]:
+        stmt = select(TimelineEventModel).where(TimelineEventModel.capture_id == capture_id)
+        if host:
+            host_pat = f"%{host}%"
+            stmt = stmt.where(
+                (
+                    TimelineEventModel.source_ip.ilike(host_pat)
+                    | TimelineEventModel.destination_ip.ilike(host_pat)
+                    | TimelineEventModel.domain.ilike(host_pat)
+                )
+            )
+        if protocol:
+            stmt = stmt.where(TimelineEventModel.protocol.ilike(f"%{protocol}%"))
+        if event_type:
+            stmt = stmt.where(TimelineEventModel.event_type == event_type)
+        if severity:
+            stmt = stmt.where(TimelineEventModel.severity == severity.lower())
+        if after is not None:
+            stmt = stmt.where(TimelineEventModel.timestamp >= after)
+        if before is not None:
+            stmt = stmt.where(TimelineEventModel.timestamp <= before)
+
+        total = self.db.scalar(
+            select(func.count()).select_from(TimelineEventModel).where(stmt.whereclause)
+        )
+        stmt = stmt.order_by(TimelineEventModel.timestamp).limit(limit).offset(offset)
+        return list(self.db.scalars(stmt)), int(total or 0)
 
     def delete_for_capture(self, capture_id: str) -> int:
         result = self.db.execute(
@@ -282,3 +434,93 @@ class JobRepository:
             if job.status in ("queued", "running"):
                 return job
         return None
+
+
+class PacketRepository:
+    """Packet store: normalized packets persisted once at analysis time."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def to_normalized(self, p: PacketModel):
+        """Convert a persisted packet back to the normalized dataclass."""
+        from app.core.models import NormalizedPacket
+
+        return NormalizedPacket(
+            timestamp=p.timestamp,
+            source_ip=p.source_ip,
+            destination_ip=p.destination_ip,
+            protocol=p.protocol,
+            transport=p.transport,
+            source_port=p.source_port,
+            destination_port=p.destination_port,
+            length=p.length,
+            flags=p.flags or [],
+            metadata=p.meta or {},
+            packet_reference=p.packet_reference,
+        )
+
+    def create_many(self, capture_id: str, parsed) -> int:
+        """Batch-insert normalized packets; returns count persisted."""
+        BATCH = 5_000
+        count = 0
+        for start in range(0, len(parsed.packets), BATCH):
+            batch = parsed.packets[start : start + BATCH]
+            self.db.add_all(
+                PacketModel(
+                    id=new_id(),
+                    capture_id=capture_id,
+                    packet_reference=p.packet_reference,
+                    timestamp=p.timestamp,
+                    source_ip=p.source_ip,
+                    destination_ip=p.destination_ip,
+                    protocol=p.protocol,
+                    transport=p.transport,
+                    source_port=p.source_port,
+                    destination_port=p.destination_port,
+                    length=p.length,
+                    flags=p.flags,
+                    meta=p.metadata,
+                )
+                for p in batch
+            )
+            self.db.commit()
+            count += len(batch)
+        return count
+
+    def get_by_refs(self, capture_id: str, refs: list[int]) -> list[PacketModel]:
+        """Fetch specific packets by their ordinals (flow evidence drill-down)."""
+        if not refs:
+            return []
+        wanted = set(refs)
+        stmt = (
+            select(PacketModel)
+            .where(PacketModel.capture_id == capture_id)
+            .where(PacketModel.packet_reference.in_(wanted))
+            .order_by(PacketModel.packet_reference)
+        )
+        return list(self.db.scalars(stmt))
+
+    def iter_for_capture(self, capture_id: str) -> list[PacketModel]:
+        """All packets for a capture, ordered by ordinal."""
+        stmt = (
+            select(PacketModel)
+            .where(PacketModel.capture_id == capture_id)
+            .order_by(PacketModel.packet_reference)
+        )
+        return list(self.db.scalars(stmt))
+
+    def as_parsed_capture(self, capture_id: str):
+        """All packets as a ParsedCapture-shaped object (for analysis services)."""
+        from app.core.models import ParsedCapture
+
+        parsed = ParsedCapture(filename="")
+        parsed.packets = [self.to_normalized(p) for p in self.iter_for_capture(capture_id)]
+        return parsed
+
+    def delete_for_capture(self, capture_id: str) -> int:
+        result = self.db.execute(
+            delete(PacketModel).where(PacketModel.capture_id == capture_id)
+        )
+        self.db.commit()
+        return result.rowcount or 0

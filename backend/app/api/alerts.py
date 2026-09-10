@@ -1,42 +1,43 @@
 """Alert endpoints: list, detail, acknowledge."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.api.common import capture_or_404
 from app.core.database import get_db
-from app.db.orm import CaptureModel
 from app.repositories import AlertRepository
-from app.schemas.api import AlertOut, MessageOut
+from app.schemas.api import AlertOut, Page
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
 
-def _capture_or_404(db: Session, capture_id: str) -> CaptureModel:
-    capture = db.get(CaptureModel, capture_id)
-    if capture is None:
-        raise HTTPException(404, "Capture not found")
-    return capture
-
-
-@router.get("", response_model=list[AlertOut])
+@router.get("", response_model=Page)
 def list_alerts(
     capture_id: str,
     severity: str | None = None,
     min_score: int | None = None,
     rule: str | None = None,
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
-    _capture_or_404(db, capture_id)
-    alerts = AlertRepository(db).list_for_capture(capture_id)
-    if severity:
-        alerts = [a for a in alerts if a.severity == severity.lower()]
-    if min_score is not None:
-        alerts = [a for a in alerts if a.score >= min_score]
-    if rule:
-        alerts = [a for a in alerts if a.rule_name == rule]
-    return alerts
+    capture_or_404(db, capture_id)
+    alerts, total = AlertRepository(db).page_for_capture(
+        capture_id,
+        limit=limit,
+        offset=offset,
+        severity=severity,
+        min_score=min_score,
+        rule=rule,
+    )
+    return Page.of(
+        [AlertOut.model_validate(a) for a in alerts],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @router.get("/{alert_id}", response_model=AlertOut)

@@ -1,21 +1,15 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
+import { CapturePicker } from '../components/CapturePicker'
 import { formatBytes, formatTime } from '../components/ui'
+import { useSelectedCapture } from '../hooks/captures'
 import type { Host } from '../types/api'
 
 export function HostsPage() {
-  const [captureId, setCaptureId] = useState<string | null>(null)
+  const { analyzed, effectiveCaptureId, setCaptureId } = useSelectedCapture()
   const [internalFilter, setInternalFilter] = useState<'' | 'true' | 'false'>('')
   const [selectedHost, setSelectedHost] = useState<Host | null>(null)
-
-  const { data: captures } = useQuery({
-    queryKey: ['captures'],
-    queryFn: api.listCaptures,
-    refetchInterval: 5000,
-  })
-  const analyzed = (captures ?? []).filter((c) => c.status === 'completed')
-  const effectiveCaptureId = captureId ?? analyzed[0]?.id ?? null
 
   const { data: hosts, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['hosts', effectiveCaptureId, internalFilter],
@@ -32,17 +26,7 @@ export function HostsPage() {
       </p>
 
       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
-        <select
-          value={effectiveCaptureId ?? ''}
-          onChange={(e) => setCaptureId(e.target.value || null)}
-          className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200"
-        >
-          {analyzed.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.filename}
-            </option>
-          ))}
-        </select>
+        <CapturePicker captures={analyzed} value={effectiveCaptureId} onChange={setCaptureId} />
         {[
           { v: '', l: 'All' },
           { v: 'true', l: 'Internal' },

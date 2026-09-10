@@ -82,7 +82,7 @@ def test_port_scan_host_contacted_many_ports(client):
 
 def test_dns_transactions_paired(client):
     capture_id = _analyze(client, "normal_traffic.pcap")
-    txns = client.get(f"/api/protocols/dns?capture_id={capture_id}").json()
+    txns = client.get(f"/api/protocols/dns?capture_id={capture_id}").json()["items"]
     assert len(txns) == 3
     for t in txns:
         assert t["is_response"] is True
@@ -97,14 +97,14 @@ def test_dns_transactions_paired(client):
 
 def test_dns_tunneling_nxdomain(client):
     capture_id = _analyze(client, "dns_tunneling.pcap")
-    txns = client.get(f"/api/protocols/dns?capture_id={capture_id}&rcode=3").json()
+    txns = client.get(f"/api/protocols/dns?capture_id={capture_id}&rcode=3&limit=500").json()["items"]
     assert len(txns) == 64  # every tunneling query got NXDOMAIN
     assert all(t["query_name"].endswith(".tunnel.example.net.") for t in txns)
 
 
 def test_dns_domain_filter(client):
     capture_id = _analyze(client, "normal_traffic.pcap")
-    txns = client.get(f"/api/protocols/dns?capture_id={capture_id}&domain=github").json()
+    txns = client.get(f"/api/protocols/dns?capture_id={capture_id}&domain=github").json()["items"]
     assert len(txns) == 1
     assert "github.com" in txns[0]["query_name"]
 
@@ -114,7 +114,7 @@ def test_dns_domain_filter(client):
 
 def test_http_transactions(client):
     capture_id = _analyze(client, "normal_traffic.pcap")
-    txns = client.get(f"/api/protocols/http?capture_id={capture_id}").json()
+    txns = client.get(f"/api/protocols/http?capture_id={capture_id}").json()["items"]
     assert len(txns) == 2
     by_host = {t["host"]: t for t in txns}
     ex = by_host["example.com"]
@@ -132,7 +132,7 @@ def test_http_transactions(client):
 
 def test_http_status_filter(client):
     capture_id = _analyze(client, "normal_traffic.pcap")
-    errors = client.get(f"/api/protocols/http?capture_id={capture_id}&status=404").json()
+    errors = client.get(f"/api/protocols/http?capture_id={capture_id}&status=404").json()["items"]
     assert len(errors) == 1
     assert errors[0]["host"] == "github.com"
 
@@ -142,7 +142,7 @@ def test_http_status_filter(client):
 
 def test_tls_sessions_with_sni(client):
     capture_id = _analyze(client, "normal_traffic.pcap")
-    sessions = client.get(f"/api/protocols/tls?capture_id={capture_id}").json()
+    sessions = client.get(f"/api/protocols/tls?capture_id={capture_id}").json()["items"]
     assert len(sessions) >= 1
     sni = [s["sni"] for s in sessions if s["sni"]]
     assert "wikipedia.org" in sni
@@ -156,7 +156,7 @@ def test_tls_sessions_with_sni(client):
 
 def test_tls_sni_filter(client):
     capture_id = _analyze(client, "normal_traffic.pcap")
-    sessions = client.get(f"/api/protocols/tls?capture_id={capture_id}&sni=wikipedia").json()
+    sessions = client.get(f"/api/protocols/tls?capture_id={capture_id}&sni=wikipedia").json()["items"]
     assert len(sessions) == 1
     assert sessions[0]["sni"] == "wikipedia.org"
 

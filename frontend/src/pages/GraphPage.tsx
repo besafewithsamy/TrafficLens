@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import cytoscape, { type ElementDefinition } from 'cytoscape'
 import { api } from '../api/client'
+import { CapturePicker } from '../components/CapturePicker'
+import { ErrorState } from '../components/states'
 import { formatBytes } from '../components/ui'
+import { useSelectedCapture } from '../hooks/captures'
 import type { GraphNodeData } from '../types/api'
 
 const NODE_STYLE: Record<string, { bg: string; border: string }> = {
@@ -23,17 +26,9 @@ const EDGE_COLORS: Record<string, string> = {
 }
 
 export function GraphPage() {
-  const [captureId, setCaptureId] = useState<string | null>(null)
+  const { analyzed, effectiveCaptureId, setCaptureId } = useSelectedCapture()
   const [selectedNode, setSelectedNode] = useState<GraphNodeData | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-
-  const { data: captures } = useQuery({
-    queryKey: ['captures'],
-    queryFn: api.listCaptures,
-    refetchInterval: 5000,
-  })
-  const analyzed = (captures ?? []).filter((c) => c.status === 'completed')
-  const effectiveCaptureId = captureId ?? analyzed[0]?.id ?? null
 
   const { data: graph, isError } = useQuery({
     queryKey: ['graph', effectiveCaptureId],
@@ -119,17 +114,9 @@ export function GraphPage() {
             {graph.stats.service_count} services · {graph.stats.edge_count} edges
           </span>
         )}
-        <select
-          value={effectiveCaptureId ?? ''}
-          onChange={(e) => setCaptureId(e.target.value || null)}
-          className="ml-auto rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200"
-        >
-          {analyzed.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.filename}
-            </option>
-          ))}
-        </select>
+        <div className="ml-auto">
+          <CapturePicker captures={analyzed} value={effectiveCaptureId} onChange={setCaptureId} />
+        </div>
       </div>
 
       <div className="relative flex-1 overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
@@ -163,6 +150,11 @@ export function GraphPage() {
               : analyzed.length
                 ? 'Building graph…'
                 : 'No analyzed captures yet.'}
+          </div>
+        )}
+        {isError && !graph && (
+          <div className="absolute inset-x-0 bottom-6 mx-auto w-fit">
+            <ErrorState message="Graph request failed." />
           </div>
         )}
 

@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Area,
@@ -13,7 +12,9 @@ import {
   YAxis,
 } from 'recharts'
 import { api } from '../api/client'
+import { CapturePicker } from '../components/CapturePicker'
 import { formatBytes } from '../components/ui'
+import { useSelectedCapture } from '../hooks/captures'
 import type { EngineerIssue } from '../types/api'
 
 const HEALTH_STYLE: Record<string, { label: string; cls: string }> = {
@@ -35,15 +36,7 @@ const PROTOCOL_COLORS = [
 ]
 
 export function EngineerPage() {
-  const [captureId, setCaptureId] = useState<string | null>(null)
-
-  const { data: captures } = useQuery({
-    queryKey: ['captures'],
-    queryFn: api.listCaptures,
-    refetchInterval: 5000,
-  })
-  const analyzed = (captures ?? []).filter((c) => c.status === 'completed')
-  const effectiveCaptureId = captureId ?? analyzed[0]?.id ?? null
+  const { analyzed, effectiveCaptureId, setCaptureId } = useSelectedCapture()
 
   const { data: m, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['engineer', effectiveCaptureId],
@@ -60,26 +53,18 @@ export function EngineerPage() {
             Network health — throughput, reliability, latency. Not security.
           </p>
         </div>
-        {m && (
-          <span
-            className={`ml-auto rounded-lg px-4 py-1.5 text-sm font-bold ring-1 ${
-              (HEALTH_STYLE[m.health] ?? HEALTH_STYLE.healthy).cls
-            }`}
-          >
-            {(HEALTH_STYLE[m.health] ?? HEALTH_STYLE.healthy).label}
-          </span>
-        )}
-        <select
-          value={effectiveCaptureId ?? ''}
-          onChange={(e) => setCaptureId(e.target.value || null)}
-          className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200"
-        >
-          {analyzed.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.filename}
-            </option>
-          ))}
-        </select>
+        <div className="ml-auto flex items-center gap-3">
+          {m && (
+            <span
+              className={`rounded-lg px-4 py-1.5 text-sm font-bold ring-1 ${
+                (HEALTH_STYLE[m.health] ?? HEALTH_STYLE.healthy).cls
+              }`}
+            >
+              {(HEALTH_STYLE[m.health] ?? HEALTH_STYLE.healthy).label}
+            </span>
+          )}
+          <CapturePicker captures={analyzed} value={effectiveCaptureId} onChange={setCaptureId} />
+        </div>
       </div>
 
       {!analyzed.length ? (

@@ -1,22 +1,24 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
+import { CapturePicker } from '../components/CapturePicker'
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  Pagination,
+} from '../components/states'
 import { formatBytes, formatTime } from '../components/ui'
+import { useDebouncedValue, useSelectedCapture } from '../hooks/captures'
 import type { ProtocolStats } from '../types/api'
 
 type Tab = 'dns' | 'http' | 'tls'
 
-export function ProtocolPage() {
-  const [captureId, setCaptureId] = useState<string | null>(null)
-  const [tab, setTab] = useState<Tab>('dns')
+const PAGE_SIZE = 50
 
-  const { data: captures } = useQuery({
-    queryKey: ['captures'],
-    queryFn: api.listCaptures,
-    refetchInterval: 5000,
-  })
-  const analyzed = (captures ?? []).filter((c) => c.status === 'completed')
-  const effectiveCaptureId = captureId ?? analyzed[0]?.id ?? null
+export function ProtocolPage() {
+  const { analyzed, effectiveCaptureId, setCaptureId } = useSelectedCapture()
+  const [tab, setTab] = useState<Tab>('dns')
 
   const { data: stats } = useQuery({
     queryKey: ['protocolStats', effectiveCaptureId],
@@ -32,17 +34,7 @@ export function ProtocolPage() {
       </p>
 
       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
-        <select
-          value={effectiveCaptureId ?? ''}
-          onChange={(e) => setCaptureId(e.target.value || null)}
-          className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200"
-        >
-          {analyzed.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.filename}
-            </option>
-          ))}
-        </select>
+        <CapturePicker captures={analyzed} value={effectiveCaptureId} onChange={setCaptureId} />
         {(['dns', 'http', 'tls'] as Tab[]).map((t) => (
           <button
             key={t}
@@ -59,9 +51,7 @@ export function ProtocolPage() {
       </div>
 
       {!analyzed.length ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-slate-500">
-          No analyzed captures yet.
-        </div>
+        <EmptyState>No analyzed captures yet.</EmptyState>
       ) : (
         <>
           {/* Protocol overview stats */}
@@ -104,23 +94,36 @@ function DnsStats({ stats }: { stats: ProtocolStats['dns'] }) {
 function DnsTable({ captureId }: { captureId: string }) {
   const [domain, setDomain] = useState('')
   const [nxdomainOnly, setNxdomainOnly] = useState(false)
+  const [offset, setOffset] = useState(0)
+  const debouncedDomain = useDebouncedValue(domain)
 
-  const { data: txns, isLoading, isError } = useQuery({
-    queryKey: ['dns', captureId, domain, nxdomainOnly],
-    queryFn: () => api.listDns(captureId, { domain: domain || undefined, rcode: nxdomainOnly ? 3 : undefined }),
+  const { data: page, isLoading, isError, refetch } = useQuery({
+    queryKey: ['dns', captureId, debouncedDomain, nxdomainOnly, offset],
+    queryFn: () =>
+      api.listDns(
+        captureId,
+        {
+          domain: debouncedDomain || undefined,
+          rcode: nxdomainOnly ? 3 : undefined,
+        },
+        { limit: PAGE_SIZE, offset },
+      ),
   })
+
+  const txns = page?.items ?? []
 
   return (
     <div>
       <div className="mb-3 flex items-center gap-3 text-sm">
         <input
           value={domain}
-          onChange={(e) => setDomain(e.target.value)}
+          onChange={(e) => { setDomain(e.target.value); setOffset(0) }}
           placeholder="filter by domain…"
+          aria-label="Filter by domain"
           className="w-64 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200 placeholder-slate-600 focus:border-violet-500/50 focus:outline-none"
         />
         <button
-          onClick={() => setNxdomainOnly(!nxdomainOnly)}
+          onClick={() => { setNxdomainOnly(!nxdomainOnly); setOffset(0) }}
           className={`rounded-lg px-3 py-1.5 ring-1 transition ${
             nxdomainOnly
               ? 'bg-red-500/10 text-red-300 ring-red-500/30'
@@ -130,8 +133,24 @@ function DnsTable({ captureId }: { captureId: string }) {
           NXDOMAIN only
         </button>
       </div>
-      <TableShell count={txns?.length ?? 0} headers={['Time', 'Client', 'Query', 'Type', 'Answers', 'RCode', 'Latency']} loading={isLoading} error={isError}>
-        {(txns ?? []).slice(0, 200).map((t) => (
+      <TableShell
+        count={page?.total ?? 0}
+        headers={['Time', 'Client', 'Query', 'Type', 'Answers', 'RCode', 'Latency']}
+        loading={isLoading}
+        error={isError}
+        onRetry={refetch}
+        footer={
+          page && (
+            <Pagination
+              offset={page.offset}
+              limit={page.limit}
+              total={page.total}
+              onPageChange={setOffset}
+            />
+          )
+        }
+      >
+        {txns.map((t) => (
           <tr key={t.id} className="border-t border-slate-800/60 hover:bg-slate-800/30">
             <Td className="font-mono text-xs text-slate-500">{formatTime(t.timestamp)}</Td>
             <Td className="font-mono text-xs">{t.client_ip}</Td>
@@ -167,7 +186,7 @@ function DnsTable({ captureId }: { captureId: string }) {
 
 // ---------------- HTTP ----------------
 
-function HttpStats({ stats }: { stats: { transactions: number; status_codes: Record<string, number>; methods: Record<string, number>; total_request_bytes: number; total_response_bytes: number } }) {
+function HttpStats({ stats }: { stats: ProtocolStats['http'] }) {
   return (
     <div className="mb-4 grid grid-cols-5 gap-4">
       <StatBox label="Transactions" value={stats.transactions} />
@@ -189,23 +208,46 @@ function HttpStats({ stats }: { stats: { transactions: number; status_codes: Rec
 
 function HttpTable({ captureId }: { captureId: string }) {
   const [hostFilter, setHostFilter] = useState('')
-  const { data: txns, isLoading, isError } = useQuery({
-    queryKey: ['http', captureId, hostFilter],
-    queryFn: () => api.listHttp(captureId, { host: hostFilter || undefined }),
+  const [offset, setOffset] = useState(0)
+  const debouncedHost = useDebouncedValue(hostFilter)
+
+  const { data: page, isLoading, isError, refetch } = useQuery({
+    queryKey: ['http', captureId, debouncedHost, offset],
+    queryFn: () =>
+      api.listHttp(captureId, { host: debouncedHost || undefined }, { limit: PAGE_SIZE, offset }),
   })
+
+  const txns = page?.items ?? []
 
   return (
     <div>
       <div className="mb-3 flex items-center gap-3 text-sm">
         <input
           value={hostFilter}
-          onChange={(e) => setHostFilter(e.target.value)}
+          onChange={(e) => { setHostFilter(e.target.value); setOffset(0) }}
           placeholder="filter by host header…"
+          aria-label="Filter by host"
           className="w-64 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200 placeholder-slate-600 focus:border-violet-500/50 focus:outline-none"
         />
       </div>
-      <TableShell count={txns?.length ?? 0} headers={['Time', 'Method', 'Host', 'Path', 'Status', 'UA', 'Size']} loading={isLoading} error={isError}>
-        {(txns ?? []).slice(0, 200).map((t) => (
+      <TableShell
+        count={page?.total ?? 0}
+        headers={['Time', 'Method', 'Host', 'Path', 'Status', 'UA', 'Size']}
+        loading={isLoading}
+        error={isError}
+        onRetry={refetch}
+        footer={
+          page && (
+            <Pagination
+              offset={page.offset}
+              limit={page.limit}
+              total={page.total}
+              onPageChange={setOffset}
+            />
+          )
+        }
+      >
+        {txns.map((t) => (
           <tr key={t.id} className="border-t border-slate-800/60 hover:bg-slate-800/30">
             <Td className="font-mono text-xs text-slate-500">{formatTime(t.timestamp)}</Td>
             <Td className="text-xs font-bold text-sky-400">{t.method ?? '—'}</Td>
@@ -241,23 +283,46 @@ function HttpTable({ captureId }: { captureId: string }) {
 
 function TlsTable({ captureId }: { captureId: string }) {
   const [sniFilter, setSniFilter] = useState('')
-  const { data: sessions, isLoading, isError } = useQuery({
-    queryKey: ['tls', captureId, sniFilter],
-    queryFn: () => api.listTls(captureId, { sni: sniFilter || undefined }),
+  const [offset, setOffset] = useState(0)
+  const debouncedSni = useDebouncedValue(sniFilter)
+
+  const { data: page, isLoading, isError, refetch } = useQuery({
+    queryKey: ['tls', captureId, debouncedSni, offset],
+    queryFn: () =>
+      api.listTls(captureId, { sni: debouncedSni || undefined }, { limit: PAGE_SIZE, offset }),
   })
+
+  const sessions = page?.items ?? []
 
   return (
     <div>
       <div className="mb-3 flex items-center gap-3 text-sm">
         <input
           value={sniFilter}
-          onChange={(e) => setSniFilter(e.target.value)}
+          onChange={(e) => { setSniFilter(e.target.value); setOffset(0) }}
           placeholder="filter by SNI…"
+          aria-label="Filter by SNI"
           className="w-64 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200 placeholder-slate-600 focus:border-violet-500/50 focus:outline-none"
         />
       </div>
-      <TableShell count={sessions?.length ?? 0} headers={['First Seen', 'Client', 'Server', 'SNI', 'Bytes', 'Packets']} loading={isLoading} error={isError}>
-        {(sessions ?? []).map((s) => (
+      <TableShell
+        count={page?.total ?? 0}
+        headers={['First Seen', 'Client', 'Server', 'SNI', 'Bytes', 'Packets']}
+        loading={isLoading}
+        error={isError}
+        onRetry={refetch}
+        footer={
+          page && (
+            <Pagination
+              offset={page.offset}
+              limit={page.limit}
+              total={page.total}
+              onPageChange={setOffset}
+            />
+          )
+        }
+      >
+        {sessions.map((s) => (
           <tr key={s.id} className="border-t border-slate-800/60 hover:bg-slate-800/30">
             <Td className="font-mono text-xs text-slate-500">{formatTime(s.first_seen)}</Td>
             <Td className="font-mono text-xs">{s.client_ip}</Td>
@@ -305,12 +370,16 @@ function TableShell({
   count,
   loading,
   error,
+  onRetry,
+  footer,
   children,
 }: {
   headers: string[]
   count: number
   loading?: boolean
   error?: boolean
+  onRetry?: () => void
+  footer?: React.ReactNode
   children: React.ReactNode
 }) {
   const queryClient = useQueryClient()
@@ -321,7 +390,7 @@ function TableShell({
           <span className="flex items-center gap-3 text-red-400">
             Failed to load records.
             <button
-              onClick={() => queryClient.invalidateQueries()}
+              onClick={onRetry ?? (() => queryClient.invalidateQueries())}
               className="rounded-lg bg-slate-800 px-3 py-1 text-xs text-slate-300 ring-1 ring-slate-700 hover:text-slate-100"
             >
               Retry
@@ -347,6 +416,7 @@ function TableShell({
           <tbody>{children}</tbody>
         </table>
       </div>
+      {footer}
     </div>
   )
 }
@@ -354,3 +424,5 @@ function TableShell({
 function Td({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return <td className={`px-4 py-2 text-slate-300 ${className}`}>{children}</td>
 }
+
+export { LoadingState, ErrorState }

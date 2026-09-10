@@ -204,3 +204,26 @@ class AnalysisJobModel(Base):
     started_at: Mapped[datetime | None] = mapped_column(default=None)
     finished_at: Mapped[datetime | None] = mapped_column(default=None)
     result: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class PacketModel(Base):
+    """Persisted normalized packet — the packet store for evidence drill-down.
+
+    Written once at analysis time so evidence/stats endpoints never re-parse the PCAP.
+    """
+
+    __tablename__ = "packets"
+
+    id: Mapped[int] = mapped_column(String(32), primary_key=True)
+    capture_id: Mapped[str] = mapped_column(String(32), index=True)
+    packet_reference: Mapped[int] = mapped_column(Integer, index=True)  # ordinal in capture
+    timestamp: Mapped[float] = mapped_column(Float)
+    source_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    destination_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    protocol: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    transport: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    source_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    destination_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    length: Mapped[int] = mapped_column(Integer, default=0)
+    flags: Mapped[list] = mapped_column(JSON, default=list)
+    meta: Mapped[dict] = mapped_column("metadata", JSON, default=dict)  # 'metadata' reserved in SQLAlchemy

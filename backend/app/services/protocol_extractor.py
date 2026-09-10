@@ -172,8 +172,12 @@ def extract_tls(parsed: ParsedCapture, flows: list[dict] | None = None) -> list[
     return results
 
 
-def protocol_statistics(parsed: ParsedCapture) -> dict[str, Any]:
-    """Protocol-centric stats: 'what is this protocol doing?' summaries."""
+def protocol_statistics(parsed) -> dict[str, Any]:
+    """Protocol-centric stats: 'what is this protocol doing?' summaries.
+
+    Accepts a ParsedCapture or any object with a `.packets` iterable
+    (e.g. a lightweight wrapper over persisted packets).
+    """
     dns = extract_dns(parsed)
     http = extract_http(parsed)
 

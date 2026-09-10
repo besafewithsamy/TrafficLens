@@ -2,23 +2,20 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import { StatusPill, formatBytes, formatDuration } from '../components/ui'
+import { useCaptures } from '../hooks/captures'
 import type { Capture } from '../types/api'
 
 export function Dashboard() {
   const navigate = useNavigate()
-  const { data: captures, isLoading } = useQuery({
-    queryKey: ['captures'],
-    queryFn: api.listCaptures,
-    refetchInterval: (q) =>
-      q.state.data?.some((c) => c.status === 'analyzing' || c.status === 'queued')
-        ? 1500
-        : 5000,
-  })
+  const { data: captures, isLoading } = useCaptures()
 
   const { data: jobs } = useQuery({
     queryKey: ['jobs'],
     queryFn: api.listJobs,
-    refetchInterval: 3000,
+    refetchInterval: (q) => {
+      const active = q.state.data?.some((j) => j.status === 'running' || j.status === 'queued')
+      return active ? 1500 : 15000
+    },
   })
 
   const completed = captures?.filter((c) => c.status === 'completed') ?? []

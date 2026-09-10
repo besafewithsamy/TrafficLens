@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
+import { CapturePicker } from '../components/CapturePicker'
 import { formatTime } from '../components/ui'
+import { useSelectedCapture } from '../hooks/captures'
 import type { TimelineEvent } from '../types/api'
 
 const TYPE_META: Record<string, { icon: string; color: string }> = {
@@ -19,20 +21,12 @@ const TYPE_META: Record<string, { icon: string; color: string }> = {
 const SPEEDS = [0.5, 1, 4, 16, 64]
 
 export function ReplayPage() {
-  const [captureId, setCaptureId] = useState<string | null>(null)
+  const { analyzed, effectiveCaptureId, setCaptureId } = useSelectedCapture()
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(4)
   const [position, setPosition] = useState(0) // event index
   const [selected, setSelected] = useState<TimelineEvent | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  const { data: captures } = useQuery({
-    queryKey: ['captures'],
-    queryFn: api.listCaptures,
-    refetchInterval: 5000,
-  })
-  const analyzed = (captures ?? []).filter((c) => c.status === 'completed')
-  const effectiveCaptureId = captureId ?? analyzed[0]?.id ?? null
 
   const { data: events, isError } = useQuery({
     queryKey: ['replay', effectiveCaptureId],
@@ -67,21 +61,9 @@ export function ReplayPage() {
         <span className="text-xs text-slate-500">
           watch what happened, in order — click any event for evidence
         </span>
-        <select
-          value={effectiveCaptureId ?? ''}
-          onChange={(e) => {
-            setCaptureId(e.target.value || null)
-            setPosition(0)
-            setPlaying(false)
-          }}
-          className="ml-auto rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200"
-        >
-          {analyzed.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.filename}
-            </option>
-          ))}
-        </select>
+        <div className="ml-auto">
+          <CapturePicker captures={analyzed} value={effectiveCaptureId} onChange={(id) => { setCaptureId(id); setPosition(0); setPlaying(false) }} />
+        </div>
       </div>
 
       {!events ? (

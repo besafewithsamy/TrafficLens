@@ -1,22 +1,20 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { StatusPill, formatBytes } from '../components/ui'
-import type { Capture } from '../types/api'
+import { useCaptures } from '../hooks/captures'
+import type { Capture, Job } from '../types/api'
 
 export function CapturePage() {
   const [selectedCapture, setSelectedCapture] = useState<Capture | null>(null)
   const [parser, setParser] = useState('')
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [liveJob, setLiveJob] = useState<Job | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
 
   const { data: parsers } = useQuery({ queryKey: ['parsers'], queryFn: api.parsers })
-  const { data: captures } = useQuery({
-    queryKey: ['captures'],
-    queryFn: api.listCaptures,
-    refetchInterval: 3000,
-  })
+  const { data: captures } = useCaptures()
 
   const upload = useMutation({
     mutationFn: api.uploadCapture,
@@ -30,19 +28,34 @@ export function CapturePage() {
 
   const analyze = useMutation({
     mutationFn: (captureId: string) => api.analyzeCapture(captureId, parser || undefined),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['captures'] }),
+    onSuccess: (job) => {
+      setLiveJob(job)
+      queryClient.invalidateQueries({ queryKey: ['captures'] })
+    },
   })
 
-  // Live progress for the selected capture
-  const { data: liveCapture } = useQuery({
-    queryKey: ['capture', selectedCapture?.id],
-    queryFn: () => api.getCapture(selectedCapture!.id),
-    enabled: !!selectedCapture,
-    refetchInterval: (q) =>
-      q.state.data?.status === 'analyzing' || q.state.data?.status === 'queued' ? 800 : false,
-  })
+  // SSE live progress for the running job (falls back to captures polling)
+  useEffect(() => {
+    if (!liveJob || liveJob.status === 'completed' || liveJob.status === 'failed') return
+    const unsubscribe = api.streamJob(
+      liveJob.id,
+      (job) => setLiveJob(job),
+      () => queryClient.invalidateQueries({ queryKey: ['captures'] }),
+    )
+    return unsubscribe
+  }, [liveJob, queryClient])
 
-  const current = liveCapture ?? selectedCapture
+  // Selected capture status from the shared captures list (post-refresh source of truth)
+  const captureRow = captures?.find((c) => c.id === selectedCapture?.id) ?? null
+  const current =
+    liveJob && (liveJob.status === 'running' || liveJob.status === 'queued')
+      ? {
+          ...(captureRow ?? selectedCapture ?? undefined),
+          status: 'analyzing' as const,
+          analysis_progress:
+            liveJob.status === 'running' ? Math.max(1, Math.round(liveJob.progress)) : 1,
+        }
+      : (captureRow ?? selectedCapture)
   const busy = upload.isPending || analyze.isPending
 
   const protocolRows = useMemo(() => {
@@ -125,7 +138,8 @@ export function CapturePage() {
             <div className="flex-1">
               <div className="font-medium text-slate-200">{current.filename}</div>
               <div className="mt-0.5 text-xs text-slate-500">
-                {formatBytes(current.size_bytes)} · {current.packet_count.toLocaleString()} packets
+                {formatBytes(current.size_bytes ?? 0)} ·{' '}
+                {(current.packet_count ?? 0).toLocaleString()} packets
                 {current.parser_used && ` · parsed by ${current.parser_used}`}
               </div>
             </div>
@@ -148,7 +162,13 @@ export function CapturePage() {
           {(current.status === 'analyzing' || current.status === 'queued') && (
             <div className="px-5 py-3">
               <div className="mb-1.5 flex justify-between text-xs text-slate-500">
-                <span>{current.status === 'queued' ? 'Queued' : 'Parsing packets'}</span>
+                <span>
+                  {liveJob?.status === 'running' && liveJob.stage
+                    ? liveJob.stage
+                    : current.status === 'queued'
+                      ? 'Queued'
+                      : 'Working…'}
+                </span>
                 <span>{current.analysis_progress}%</span>
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">

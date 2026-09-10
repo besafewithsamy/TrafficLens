@@ -1,9 +1,10 @@
 """ScapyParser — default, guaranteed to work without Wireshark/TShark."""
 from __future__ import annotations
 
+import os
 from typing import Any
 
-from scapy.all import PcapReader, rdpcap
+from scapy.all import PcapReader
 from scapy.layers.dns import DNS
 from scapy.layers.http import HTTPRequest, HTTPResponse
 from scapy.layers.inet import ICMP, IP, TCP, UDP
@@ -83,11 +84,18 @@ class ScapyParser(PacketParser):
             progress_cb(len(capture.packets), len(capture.packets), "parsing")
         return capture
 
-    def _estimate_total(self, path: str) -> int:
+    @staticmethod
+    def _estimate_total(path: str) -> int:
+        """Cheap packet-count estimate from file size (avoids a second full read)."""
         try:
-            return len(rdpcap(path))
-        except Exception:
+            size = os.path.getsize(path)
+        except OSError:
             return 0
+        if size <= 0:
+            return 0
+        # pcaps average ~200-1000 bytes/packet on real captures;
+        # 400 is a good middle ground that only affects progress display granularity.
+        return max(1, size // 400)
 
     @staticmethod
     def normalize_packet(pkt: Any, index: int) -> NormalizedPacket | None:

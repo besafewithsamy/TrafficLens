@@ -9,9 +9,9 @@ def _analyze_and_alerts(client, pcap: str) -> tuple[str, list]:
     capture_id = _upload(client, pcap)
     job = _analyze_and_wait(client, capture_id)
     assert job["status"] == "completed", job
-    resp = client.get(f"/api/alerts?capture_id={capture_id}")
+    resp = client.get(f"/api/alerts?capture_id={capture_id}&limit=500")
     assert resp.status_code == 200
-    return capture_id, resp.json()
+    return capture_id, resp.json()["items"]
 
 
 def _rules(alerts: list) -> dict[str, list]:
@@ -152,12 +152,12 @@ def test_alerts_deterministic(client):
 
 def test_alert_filters(client):
     capture_id, alerts = _analyze_and_alerts(client, "c2_beacon.pcap")
-    critical = client.get(f"/api/alerts?capture_id={capture_id}&severity=critical").json()
+    critical = client.get(f"/api/alerts?capture_id={capture_id}&severity=critical").json()["items"]
     assert all(a["severity"] == "critical" for a in critical)
     assert len(critical) >= 1
-    high_score = client.get(f"/api/alerts?capture_id={capture_id}&min_score=80").json()
+    high_score = client.get(f"/api/alerts?capture_id={capture_id}&min_score=80").json()["items"]
     assert all(a["score"] >= 80 for a in high_score)
-    only_rule = client.get(f"/api/alerts?capture_id={capture_id}&rule=beaconing").json()
+    only_rule = client.get(f"/api/alerts?capture_id={capture_id}&rule=beaconing").json()["items"]
     assert all(a["rule_name"] == "beaconing" for a in only_rule)
     assert len(only_rule) == 1
 

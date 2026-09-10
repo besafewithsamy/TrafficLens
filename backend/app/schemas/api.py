@@ -59,6 +59,19 @@ class MessageOut(BaseModel):
     detail: str
 
 
+class Page(BaseModel):
+    """Pagination envelope: items + total + offset so UIs can build page controls."""
+
+    items: list[Any]
+    total: int
+    offset: int
+    limit: int
+
+    @classmethod
+    def of(cls, items: list, total: int, offset: int, limit: int) -> "Page":
+        return cls(items=items, total=total, offset=offset, limit=limit)
+
+
 class FlowOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -101,6 +114,13 @@ class PacketEvidence(BaseModel):
     flags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     packet_reference: int = 0
+
+
+class PacketOut(PacketEvidence):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    capture_id: str
 
 
 class FlowDetailOut(FlowOut):

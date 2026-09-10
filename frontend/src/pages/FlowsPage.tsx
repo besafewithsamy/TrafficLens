@@ -4,13 +4,15 @@ import {
   createColumnHelper,
   flexRender,
   getCoreRowModel,
-  getSortedRowModel,
   useReactTable,
   type ColumnDef,
-  type SortingState,
 } from '@tanstack/react-table'
 import { api } from '../api/client'
+import { CapturePicker } from '../components/CapturePicker'
+import { Modal } from '../components/Modal'
+import { EmptyState, ErrorState, LoadingState, Pagination } from '../components/states'
 import { formatBytes, formatTime } from '../components/ui'
+import { useSelectedCapture } from '../hooks/captures'
 import type { Flow, PacketEvidence } from '../types/api'
 
 const BADGE: Record<string, string> = {
@@ -27,30 +29,34 @@ const DIR_LABEL: Record<string, string> = {
   unknown: '?',
 }
 
+const PAGE_SIZE = 50
+
 export function FlowsPage() {
-  const [captureId, setCaptureId] = useState<string | null>(null)
+  const { analyzed, effectiveCaptureId, setCaptureId } = useSelectedCapture()
   const [transport, setTransport] = useState('')
   const [direction, setDirection] = useState('')
+  const [offset, setOffset] = useState(0)
+  const [sort, setSort] = useState('first_seen')
+  const [order, setOrder] = useState('asc')
   const [selectedFlowId, setSelectedFlowId] = useState<string | null>(null)
 
-  const { data: captures } = useQuery({
-    queryKey: ['captures'],
-    queryFn: api.listCaptures,
-    refetchInterval: 5000,
-  })
-
-  const analyzed = (captures ?? []).filter((c) => c.status === 'completed')
-  const effectiveCaptureId = captureId ?? analyzed[0]?.id ?? null
-
-  const { data: flows, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['flows', effectiveCaptureId, transport, direction],
+  const { data: page, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['flows', effectiveCaptureId, transport, direction, sort, order, offset],
     queryFn: () =>
-      api.listFlows(effectiveCaptureId!, {
-        transport: transport || undefined,
-        direction: direction || undefined,
-      }),
+      api.listFlows(
+        effectiveCaptureId!,
+        {
+          transport: transport || undefined,
+          direction: direction || undefined,
+          sort,
+          order,
+        },
+        { limit: PAGE_SIZE, offset },
+      ),
     enabled: !!effectiveCaptureId,
   })
+
+  const flows = page?.items ?? []
 
   return (
     <div className="p-8">
@@ -61,21 +67,11 @@ export function FlowsPage() {
 
       {/* Capture picker + filters */}
       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
-        <select
-          value={effectiveCaptureId ?? ''}
-          onChange={(e) => setCaptureId(e.target.value || null)}
-          className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200"
-        >
-          {analyzed.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.filename} ({c.packet_count} pkt)
-            </option>
-          ))}
-        </select>
+        <CapturePicker captures={analyzed} value={effectiveCaptureId} onChange={(id) => { setCaptureId(id); setOffset(0) }} />
         {['', 'TCP', 'UDP'].map((t) => (
           <button
             key={t}
-            onClick={() => setTransport(t)}
+            onClick={() => { setTransport(t); setOffset(0) }}
             className={`rounded-lg px-3 py-1.5 ring-1 transition ${
               transport === t
                 ? 'bg-sky-500/10 text-sky-300 ring-sky-500/30'
@@ -89,7 +85,7 @@ export function FlowsPage() {
         {['', 'outbound', 'inbound', 'internal'].map((d) => (
           <button
             key={d}
-            onClick={() => setDirection(d)}
+            onClick={() => { setDirection(d); setOffset(0) }}
             className={`rounded-lg px-3 py-1.5 ring-1 transition ${
               direction === d
                 ? 'bg-sky-500/10 text-sky-300 ring-sky-500/30'
@@ -99,32 +95,49 @@ export function FlowsPage() {
             {d || 'any'}
           </button>
         ))}
+        <span className="ml-2 text-xs text-slate-600">sort:</span>
+        <select
+          aria-label="Sort by"
+          value={sort}
+          onChange={(e) => { setSort(e.target.value); setOffset(0) }}
+          className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-300"
+        >
+          <option value="first_seen">first seen</option>
+          <option value="bytes">bytes</option>
+          <option value="packets">packets</option>
+          <option value="duration">duration</option>
+        </select>
+        <button
+          onClick={() => { setOrder(order === 'asc' ? 'desc' : 'asc'); setOffset(0) }}
+          className="rounded-lg px-2.5 py-1.5 text-xs text-slate-400 ring-1 ring-slate-700 hover:text-slate-200"
+        >
+          {order === 'asc' ? '↑ asc' : '↓ desc'}
+        </button>
       </div>
 
       {!analyzed.length ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-slate-500">
-          No analyzed captures yet — upload and analyze a PCAP first.
-        </div>
+        <EmptyState>No analyzed captures yet — upload and analyze a PCAP first.</EmptyState>
       ) : isLoading ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-slate-500">
-          Reconstructing flows…
-        </div>
+        <LoadingState>Reconstructing flows…</LoadingState>
       ) : isError ? (
-        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-12 text-center">
-          <div className="text-sm text-red-400">⚠ {String(error)}</div>
-          <button
-            onClick={() => refetch()}
-            className="mt-3 rounded-lg bg-slate-800 px-4 py-1.5 text-xs text-slate-300 ring-1 ring-slate-700 hover:bg-slate-700"
-          >
-            Retry
-          </button>
-        </div>
-      ) : !flows?.length ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-slate-500">
-          No flows match the current filters.
-        </div>
+        <ErrorState message={String(error)} onRetry={() => refetch()} />
+      ) : !flows.length ? (
+        <EmptyState>No flows match the current filters.</EmptyState>
       ) : (
-        <FlowsTable flows={flows} onSelect={setSelectedFlowId} />
+        <FlowsTable
+          flows={flows}
+          onSelect={setSelectedFlowId}
+          footer={
+            page && (
+              <Pagination
+                offset={page.offset}
+                limit={page.limit}
+                total={page.total}
+                onPageChange={setOffset}
+              />
+            )
+          }
+        />
       )}
 
       {selectedFlowId && (
@@ -136,9 +149,16 @@ export function FlowsPage() {
 
 const col = createColumnHelper<Flow>()
 
-function FlowsTable({ flows, onSelect }: { flows: Flow[]; onSelect: (id: string) => void }) {
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'bytes', desc: true }])
-
+function FlowsTable({
+  flows,
+  onSelect,
+  footer,
+}: {
+  flows: Flow[]
+  onSelect: (id: string) => void
+  footer?: React.ReactNode
+}) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TanStack column defs are heterogeneously typed
   const columns: ColumnDef<Flow, any>[] = useMemo(
     () => [
       col.accessor('first_seen', {
@@ -247,30 +267,19 @@ function FlowsTable({ flows, onSelect }: { flows: Flow[]; onSelect: (id: string)
   const table = useReactTable<Flow>({
     data: flows,
     columns,
-    state: { sorting },
-    onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel<Flow>(),
-    getSortedRowModel: getSortedRowModel<Flow>(),
   })
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
-      <div className="border-b border-slate-800 px-4 py-3 text-sm text-slate-400">
-        {flows.length.toLocaleString()} flows
-      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id} className="text-left text-xs uppercase tracking-wider text-slate-500">
                 {hg.headers.map((h) => (
-                  <th
-                    key={h.id}
-                    onClick={h.column.getToggleSortingHandler()}
-                    className="cursor-pointer px-4 py-2.5 select-none hover:text-slate-300"
-                  >
+                  <th key={h.id} className="px-4 py-2.5 select-none">
                     {flexRender(h.column.columnDef.header, h.getContext())}
-                    {{ asc: ' ↑', desc: ' ↓' }[h.column.getIsSorted() as string] ?? ''}
                   </th>
                 ))}
               </tr>
@@ -293,6 +302,7 @@ function FlowsTable({ flows, onSelect }: { flows: Flow[]; onSelect: (id: string)
           </tbody>
         </table>
       </div>
+      {footer}
     </div>
   )
 }
@@ -305,83 +315,70 @@ function FlowEvidenceModal({ flowId, onClose }: { flowId: string; onClose: () =>
   })
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-8"
-      onClick={onClose}
-    >
-      <div
-        className="max-h-[85vh] w-full max-w-4xl overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
-          <div>
-            <div className="font-medium text-slate-200">
-              {flow ? (
-                <>
-                  <span className="font-mono">
-                    {flow.source_ip}:{flow.source_port}
-                  </span>
-                  <span className="mx-2 text-slate-500">→</span>
-                  <span className="font-mono">
-                    {flow.destination_ip}:{flow.destination_port}
-                  </span>
-                </>
-              ) : (
-                'Loading flow…'
-              )}
-            </div>
-            {flow && (
-              <div className="mt-0.5 text-xs text-slate-500">
-                {flow.transport_protocol} · {flow.application_protocol ?? '—'} ·{' '}
-                {flow.packets} packets · {formatBytes(flow.bytes)} ·{' '}
-                {flow.retransmissions > 0 && (
-                  <span className="text-amber-400">{flow.retransmissions} retransmissions </span>
-                )}
-                {flow.resets > 0 && <span className="text-red-400">{flow.resets} resets </span>}
-              </div>
+    <Modal
+      title={
+        flow ? (
+          <>
+            <span className="font-mono">
+              {flow.source_ip}:{flow.source_port}
+            </span>
+            <span className="mx-2 text-slate-500">→</span>
+            <span className="font-mono">
+              {flow.destination_ip}:{flow.destination_port}
+            </span>
+          </>
+        ) : (
+          'Loading flow…'
+        )
+      }
+      subtitle={
+        flow && (
+          <>
+            {flow.transport_protocol} · {flow.application_protocol ?? '—'} ·{' '}
+            {flow.packets} packets · {formatBytes(flow.bytes)}
+            {flow.retransmissions > 0 && (
+              <span className="text-amber-400"> · {flow.retransmissions} retransmissions</span>
             )}
-          </div>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300">
-            ✕
+            {flow.resets > 0 && <span className="text-red-400"> · {flow.resets} resets</span>}
+          </>
+        )
+      }
+      onClose={onClose}
+      wide
+    >
+      {isError ? (
+        <div className="p-12 text-center text-sm text-red-400">
+          Failed to load packet evidence.
+          <button
+            onClick={() => queryClient.invalidateQueries({ queryKey: ['flow', flowId] })}
+            className="ml-3 rounded-lg bg-slate-800 px-3 py-1 text-xs text-slate-300 ring-1 ring-slate-700 hover:text-slate-100"
+          >
+            Retry
           </button>
         </div>
-
-        <div className="max-h-[70vh] overflow-y-auto">
-          {isError ? (
-            <div className="p-12 text-center text-sm text-red-400">
-              Failed to load packet evidence.
-              <button
-                onClick={() => queryClient.invalidateQueries({ queryKey: ['flow', flowId] })}
-                className="ml-3 rounded-lg bg-slate-800 px-3 py-1 text-xs text-slate-300 ring-1 ring-slate-700 hover:text-slate-100"
-              >
-                Retry
-              </button>
-            </div>
-          ) : isLoading || !flow ? (
-            <div className="p-12 text-center text-sm text-slate-500">Loading packet evidence…</div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-slate-900">
-                <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
-                  <th className="px-4 py-2.5">Time</th>
-                  <th className="px-4 py-2.5">Source</th>
-                  <th className="px-4 py-2.5">Destination</th>
-                  <th className="px-4 py-2.5">Proto</th>
-                  <th className="px-4 py-2.5">Flags</th>
-                  <th className="px-4 py-2.5">Len</th>
-                  <th className="px-4 py-2.5">Info</th>
-                </tr>
-              </thead>
-              <tbody>
-                {flow.packet_evidence.map((p, i) => (
-                  <EvidenceRow key={i} pkt={p} />
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
-    </div>
+      ) : isLoading || !flow ? (
+        <div className="p-12 text-center text-sm text-slate-500">Loading packet evidence…</div>
+      ) : (
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-slate-900">
+            <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
+              <th className="px-4 py-2.5">Time</th>
+              <th className="px-4 py-2.5">Source</th>
+              <th className="px-4 py-2.5">Destination</th>
+              <th className="px-4 py-2.5">Proto</th>
+              <th className="px-4 py-2.5">Flags</th>
+              <th className="px-4 py-2.5">Len</th>
+              <th className="px-4 py-2.5">Info</th>
+            </tr>
+          </thead>
+          <tbody>
+            {flow.packet_evidence.map((p: PacketEvidence, i: number) => (
+              <EvidenceRow key={i} pkt={p} />
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Modal>
   )
 }
 
@@ -428,7 +425,7 @@ function EvidenceRow({ pkt }: { pkt: PacketEvidence }) {
       </td>
       <td className="px-4 py-2 text-xs text-slate-400">{pkt.length}</td>
       <td className="max-w-[200px] truncate px-4 py-2 font-mono text-xs text-slate-500">
-        {info}
+        {info || '—'}
       </td>
     </tr>
   )

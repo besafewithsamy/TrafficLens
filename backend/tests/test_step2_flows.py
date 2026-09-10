@@ -10,9 +10,18 @@ from tests.test_step1 import _analyze_and_wait, _upload
 def _flows_for(client, pcap_name: str) -> tuple[str, list]:
     capture_id = _upload(client, pcap_name)
     _analyze_and_wait(client, capture_id)
-    resp = client.get(f"/api/flows?capture_id={capture_id}")
-    assert resp.status_code == 200, resp.text
-    return capture_id, resp.json()
+    flows: list = []
+    offset = 0
+    # paginate through the full flow set
+    while True:
+        resp = client.get(f"/api/flows?capture_id={capture_id}&limit=500&offset={offset}")
+        assert resp.status_code == 200, resp.text
+        page = resp.json()
+        flows.extend(page["items"])
+        offset += page["limit"]
+        if offset >= page["total"]:
+            break
+    return capture_id, flows
 
 
 def test_flows_bidirectional_aggregation(client):
@@ -140,12 +149,25 @@ def test_flow_summary_in_capture(client):
 
 
 def test_flow_filters(client):
-    """Transport + direction filters narrow the flow list."""
-    capture_id, flows = _flows_for(client, "normal_traffic.pcap")
+    """Transport + direction filters narrow the flow list (server-side, paginated)."""
+    capture_id, _ = _flows_for(client, "normal_traffic.pcap")
     tcp_only = client.get(f"/api/flows?capture_id={capture_id}&transport=TCP").json()
-    assert tcp_only and all(f["transport_protocol"] == "TCP" for f in tcp_only)
+    assert tcp_only["total"] == 3
+    assert all(f["transport_protocol"] == "TCP" for f in tcp_only["items"])
     outbound = client.get(f"/api/flows?capture_id={capture_id}&direction=outbound").json()
-    assert outbound and all(f["direction"] == "outbound" for f in outbound)
+    assert outbound["total"] > 0
+    assert all(f["direction"] == "outbound" for f in outbound["items"])
+
+
+def test_flow_pagination(client):
+    """limit/offset paging returns correct slices + accurate totals."""
+    capture_id, _ = _flows_for(client, "port_scan.pcap")
+    p1 = client.get(f"/api/flows?capture_id={capture_id}&limit=10&offset=0").json()
+    p2 = client.get(f"/api/flows?capture_id={capture_id}&limit=10&offset=10").json()
+    assert p1["total"] == 100
+    assert len(p1["items"]) == 10
+    assert len(p2["items"]) == 10
+    assert p1["items"][0]["id"] != p2["items"][0]["id"]
 
 
 def test_flow_not_found(client):

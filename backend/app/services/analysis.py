@@ -21,6 +21,7 @@ from app.repositories import (
     HTTPRepository,
     HostRepository,
     JobRepository,
+    PacketRepository,
     TLSRepository,
     TimelineRepository,
 )
@@ -70,6 +71,7 @@ class AnalysisService:
         self.tls = TLSRepository(db)
         self.alerts = AlertRepository(db)
         self.timeline = TimelineRepository(db)
+        self.packets = PacketRepository(db)
 
     def run_full_analysis(
         self,
@@ -90,6 +92,11 @@ class AnalysisService:
                 self.captures.update(capture, analysis_progress=min(99, max(1, pct)))
 
             parsed = parser.parse_file(file_path or capture.filename, progress_cb)
+
+            # ---- Packet store (evidence drill-down without re-parsing) ----
+            self.jobs.update(job, stage="persisting_packets", progress=91)
+            self.packets.delete_for_capture(capture.id)
+            self.packets.create_many(capture.id, parsed)
 
             # ---- Flow reconstruction (Step 2) ----
             self.jobs.update(job, stage="flow_reconstruction", progress=92)

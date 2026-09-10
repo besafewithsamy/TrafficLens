@@ -1,7 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
+import { CapturePicker } from '../components/CapturePicker'
+import { Modal } from '../components/Modal'
+import { EmptyState, ErrorState, Pagination } from '../components/states'
 import { formatTime } from '../components/ui'
+import { useDebouncedValue, useSelectedCapture } from '../hooks/captures'
 import type { TimelineEvent } from '../types/api'
 
 const TYPE_META: Record<string, { icon: string; color: string }> = {
@@ -23,31 +27,31 @@ const SEVERITY_DOT: Record<string, string> = {
   low: 'bg-sky-400',
 }
 
+const PAGE_SIZE = 200
+
 export function TimelinePage() {
-  const [captureId, setCaptureId] = useState<string | null>(null)
+  const { analyzed, effectiveCaptureId, setCaptureId } = useSelectedCapture()
   const [host, setHost] = useState('')
   const [eventType, setEventType] = useState('')
   const [severity, setSeverity] = useState('')
+  const [offset, setOffset] = useState(0)
   const [selected, setSelected] = useState<TimelineEvent | null>(null)
+  const debouncedHost = useDebouncedValue(host)
 
-  const { data: captures } = useQuery({
-    queryKey: ['captures'],
-    queryFn: api.listCaptures,
-    refetchInterval: 5000,
-  })
-  const analyzed = (captures ?? []).filter((c) => c.status === 'completed')
-  const effectiveCaptureId = captureId ?? analyzed[0]?.id ?? null
-
-  const { data: events, isLoading, isError } = useQuery({
-    queryKey: ['timeline', effectiveCaptureId, host, eventType, severity],
+  const { data: page, isLoading, isError, refetch } = useQuery({
+    queryKey: ['timeline', effectiveCaptureId, debouncedHost, eventType, severity, offset],
     queryFn: () =>
       api.getTimeline(effectiveCaptureId!, {
-        host: host || undefined,
+        host: debouncedHost || undefined,
         eventType: eventType || undefined,
         severity: severity || undefined,
+        limit: PAGE_SIZE,
+        offset,
       }),
     enabled: !!effectiveCaptureId,
   })
+
+  const events = page?.items ?? []
 
   return (
     <div className="p-8">
@@ -57,26 +61,18 @@ export function TimelinePage() {
       </p>
 
       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
-        <select
-          value={effectiveCaptureId ?? ''}
-          onChange={(e) => setCaptureId(e.target.value || null)}
-          className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200"
-        >
-          {analyzed.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.filename}
-            </option>
-          ))}
-        </select>
+        <CapturePicker captures={analyzed} value={effectiveCaptureId} onChange={setCaptureId} />
         <input
           value={host}
-          onChange={(e) => setHost(e.target.value)}
+          onChange={(e) => { setHost(e.target.value); setOffset(0) }}
           placeholder="host / IP / domain…"
+          aria-label="Filter by host"
           className="w-56 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200 placeholder-slate-600 focus:border-sky-500/50 focus:outline-none"
         />
         <select
           value={eventType}
-          onChange={(e) => setEventType(e.target.value)}
+          onChange={(e) => { setEventType(e.target.value); setOffset(0) }}
+          aria-label="Filter by event type"
           className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200"
         >
           <option value="">all types</option>
@@ -111,19 +107,23 @@ export function TimelinePage() {
           Building timeline…
         </div>
       ) : isError ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-red-400">
-          Failed to load timeline events. Please try again.
-        </div>
-      ) : !events?.length ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-slate-500">
-          No events match the current filters.
-        </div>
+        <ErrorState message="Failed to load timeline events." onRetry={() => refetch()} />
+      ) : !events.length ? (
+        <EmptyState>No events match the current filters.</EmptyState>
       ) : (
         <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
           <div className="border-b border-slate-800 px-4 py-3 text-sm text-slate-400">
-            {events.length.toLocaleString()} events
+            {(page?.total ?? 0).toLocaleString()} events
           </div>
           <EventList events={events} onSelect={setSelected} />
+          {page && (
+            <Pagination
+              offset={page.offset}
+              limit={page.limit}
+              total={page.total}
+              onPageChange={setOffset}
+            />
+          )}
         </div>
       )}
 
@@ -139,19 +139,9 @@ function EventList({
   events: TimelineEvent[]
   onSelect: (e: TimelineEvent) => void
 }) {
-  // group by wall-clock minute for visual rhythm
-  const rows = useMemo(
-    () =>
-      events.map((e) => ({
-        ...e,
-        minute: Math.floor(e.timestamp / 60) * 60,
-      })),
-    [events],
-  )
-
   return (
     <div className="max-h-[65vh] overflow-y-auto">
-      {rows.map((e) => {
+      {events.map((e) => {
         const meta = TYPE_META[e.event_type] ?? { icon: '·', color: 'text-slate-500' }
         return (
           <button
@@ -196,26 +186,12 @@ function EventDetailModal({
   })
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-8"
-      onClick={onClose}
+    <Modal
+      title={event.label}
+      subtitle={`${new Date(event.timestamp * 1000).toLocaleString()} · ${event.event_type}`}
+      onClose={onClose}
     >
-      <div
-        className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="sticky top-0 flex items-center justify-between border-b border-slate-800 bg-slate-900 px-5 py-4">
-          <div>
-            <div className="text-sm font-medium text-slate-200">{event.label}</div>
-            <div className="mt-0.5 text-xs text-slate-500">
-              {new Date(event.timestamp * 1000).toLocaleString()} · {event.event_type}
-            </div>
-          </div>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300">
-            ✕
-          </button>
-        </div>
-        <div className="space-y-4 p-5">
+      <div className="space-y-4 p-5">
           <div className="grid grid-cols-2 gap-3 text-sm">
             <Field label="Source" value={event.source_ip ?? '—'} />
             <Field
@@ -253,8 +229,7 @@ function EventDetailModal({
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 

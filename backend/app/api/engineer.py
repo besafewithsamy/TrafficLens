@@ -1,38 +1,47 @@
 """Network Engineering Mode endpoint (Module G)."""
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app.api.captures import get_stored_path
 from app.core.database import get_db
 from app.db.orm import CaptureModel
-from app.parsers import resolve_parser
-from app.repositories import DNSRepository, FlowRepository
+from app.repositories import DNSRepository, FlowRepository, PacketRepository
 from app.services.engineer_metrics import compute_engineer_metrics
-from app.services.flow_builder import FlowBuilder
-from app.services.protocol_extractor import extract_dns
-from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/api/engineer", tags=["engineer"])
 
 
 @router.get("/metrics")
 def engineer_metrics(capture_id: str, db: Session = Depends(get_db)):
-    """Network health metrics: throughput, reliability, latency, anomalies."""
+    """Network health metrics computed from the packet store (no re-parsing)."""
     capture = db.get(CaptureModel, capture_id)
     if capture is None:
         raise HTTPException(404, "Capture not found")
-    stored = get_stored_path(db, capture.id)
-    if stored is None or not Path(stored).exists():
-        raise HTTPException(410, "Capture file no longer available")
 
-    parser = resolve_parser(None)
-    parsed = parser.parse_file(str(stored))
-    flows = FlowBuilder().build_from(parsed)
-    dns_txns = extract_dns(parsed)
+    packet_repo = PacketRepository(db)
+    if not packet_repo.iter_for_capture(capture_id):
+        raise HTTPException(410, "No stored packets for this capture — re-analyze it")
+    parsed = packet_repo.as_parsed_capture(capture_id)
+
+    # Flows + DNS from persisted tables
+    flows = [
+        {
+            "transport_protocol": f.transport_protocol,
+            "packets": f.packets,
+            "retransmissions": f.retransmissions,
+            "resets": f.resets,
+            "failed": bool(f.failed),
+            "syn_retransmissions": f.syn_retransmissions,
+            "packets_reverse": f.packets_reverse,
+        }
+        for f in FlowRepository(db).list_for_capture(capture_id)
+    ]
+    dns_txns = [
+        {"latency": t.latency, "rcode": t.rcode}
+        for t in DNSRepository(db).list_for_capture(capture_id)
+    ]
 
     metrics = compute_engineer_metrics(parsed, flows, dns_txns)
     return JSONResponse(metrics)

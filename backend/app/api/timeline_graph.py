@@ -1,39 +1,26 @@
 """Timeline + Graph endpoints (Module C/E/F)."""
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.captures import get_stored_path
+from app.api.common import capture_or_404
 from app.core.database import get_db
 from app.db.orm import CaptureModel
-from app.parsers import resolve_parser
 from app.repositories import (
     DNSRepository,
     FlowRepository,
-    HTTPRepository,
     HostRepository,
     TLSRepository,
     TimelineRepository,
 )
-from app.schemas.api import GraphOut, TimelineEventOut
-from app.services.flow_builder import FlowBuilder
-from app.services.protocol_extractor import extract_dns, extract_http, extract_tls
+from app.schemas.api import GraphOut, Page, TimelineEventOut
 from app.services.timeline_graph import build_graph
 
 router = APIRouter(prefix="/api", tags=["timeline-graph"])
 
 
-def _capture_or_404(db: Session, capture_id: str) -> CaptureModel:
-    capture = db.get(CaptureModel, capture_id)
-    if capture is None:
-        raise HTTPException(404, "Capture not found")
-    return capture
-
-
-@router.get("/timeline", response_model=list[TimelineEventOut])
+@router.get("/timeline", response_model=Page)
 def get_timeline(
     capture_id: str,
     host: str | None = None,        # ip or domain substring
@@ -42,36 +29,35 @@ def get_timeline(
     severity: str | None = None,
     after: float | None = None,     # epoch seconds
     before: float | None = None,
-    limit: int = Query(default=1000, ge=1, le=5000),
+    limit: int = Query(default=200, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
     """Chronological behavioral events with structured filters (Module E)."""
-    _capture_or_404(db, capture_id)
-    events = TimelineRepository(db).list_for_capture(capture_id)
-    if host:
-        events = [
-            e for e in events
-            if (e.source_ip and host in e.source_ip)
-            or (e.destination_ip and host in e.destination_ip)
-            or (e.domain and host.lower() in e.domain.lower())
-        ]
-    if protocol:
-        events = [e for e in events if e.protocol and protocol.upper() in e.protocol.upper()]
-    if event_type:
-        events = [e for e in events if e.event_type == event_type]
-    if severity:
-        events = [e for e in events if e.severity and e.severity == severity.lower()]
-    if after is not None:
-        events = [e for e in events if e.timestamp >= after]
-    if before is not None:
-        events = [e for e in events if e.timestamp <= before]
-    return events[:limit]
+    capture_or_404(db, capture_id)
+    events, total = TimelineRepository(db).page_for_capture(
+        capture_id,
+        limit=limit,
+        offset=offset,
+        host=host,
+        protocol=protocol,
+        event_type=event_type,
+        severity=severity,
+        after=after,
+        before=before,
+    )
+    return Page.of(
+        [TimelineEventOut.model_validate(e) for e in events],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @router.get("/graph", response_model=GraphOut)
 def get_graph(capture_id: str, db: Session = Depends(get_db)):
     """Cytoscape elements for the network relationship graph (Module C)."""
-    _capture_or_404(db, capture_id)
+    capture_or_404(db, capture_id)
 
     flow_models = FlowRepository(db).list_for_capture(capture_id)
     dns_txns = [
@@ -128,7 +114,7 @@ def get_replay_stream(
 
     Same data as /timeline but unfiltered, ordered, for playback.
     """
-    _capture_or_404(db, capture_id)
+    capture_or_404(db, capture_id)
     events = TimelineRepository(db).list_for_capture(capture_id)
     if after is not None:
         events = [e for e in events if e.timestamp > after]
