@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import logo from '../assets/logo.png'
 
 interface NavItem {
   to: string
@@ -26,17 +27,10 @@ export function Layout() {
     <div className="flex h-screen w-screen overflow-hidden bg-slate-950">
       {/* Persistent sidebar */}
       <aside className="flex w-56 shrink-0 flex-col border-r border-slate-800 bg-slate-900/60">
-        <div className="flex items-center gap-2.5 px-5 py-5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/15 text-lg text-emerald-400 ring-1 ring-emerald-500/30">
-            ◈
-          </div>
-          <div>
-            <div className="text-sm font-semibold tracking-wide text-slate-100">
-              TrafficLens
-            </div>
-            <div className="text-[10px] uppercase tracking-widest text-slate-500">
-              Network Intelligence
-            </div>
+        <div className="px-5 py-4">
+          <img src={logo} alt="TrafficLens" className="h-10 w-auto object-contain" />
+          <div className="mt-1 text-[10px] uppercase tracking-widest text-slate-500">
+            Network Intelligence
           </div>
         </div>
 
