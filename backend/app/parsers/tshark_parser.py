@@ -44,6 +44,13 @@ class TSharkParser(PacketParser):
                 "http.request.method",
                 "http.response.code",
                 "tls.handshake.extensions_server_name",
+                "tls.record.version",
+                "quic.long.packet_type",
+                "bootp.option.hostname",
+                "bootp.type",
+                "ssh.protocol",
+                "smtp.req_command",
+                "ftp.request.command",
             ]
         )
         cmd = [
@@ -117,6 +124,13 @@ class TSharkParser(PacketParser):
         http_method = g(18)
         http_status = g(19)
         tls_sni = g(20)
+        tls_version = g(21)
+        quic_type = g(22)
+        dhcp_hostname = g(23)
+        bootp_type = g(24)
+        ssh_proto = g(25)
+        smtp_cmd = g(26)
+        ftp_cmd = g(27)
 
         transport = "TCP" if tcp_flags_hex is not None else ("UDP" if g(12) is not None else None)
         protocol = None
@@ -131,9 +145,12 @@ class TSharkParser(PacketParser):
                 metadata["dns.is_response"] = dns_is_response == "1"
             if dns_rcode is not None:
                 metadata["dns.rcode"] = int(dns_rcode)
-        elif tls_sni:
+        elif tls_sni or tls_version:
             protocol = "TLS"
-            metadata["tls.sni"] = tls_sni
+            if tls_sni:
+                metadata["tls.sni"] = tls_sni
+            if tls_version:
+                metadata["tls.record_version"] = tls_version
         elif http_host or http_method or http_status:
             protocol = "HTTP"
             if http_host:
@@ -142,6 +159,21 @@ class TSharkParser(PacketParser):
                 metadata["http.method"] = http_method
             if http_status:
                 metadata["http.status"] = int(http_status)
+        elif quic_type is not None or (transport == "UDP" and (dport == 443 or sport == 443)):
+            protocol = "QUIC"
+        elif dhcp_hostname is not None or bootp_type is not None:
+            protocol = "DHCP"
+            if dhcp_hostname:
+                metadata["dhcp.hostname"] = dhcp_hostname
+            if bootp_type is not None:
+                metadata["dhcp.message_type"] = bootp_type
+        elif ssh_proto:
+            protocol = "SSH"
+            metadata["ssh.banner"] = ssh_proto
+        elif smtp_cmd:
+            protocol = "SMTP"
+        elif ftp_cmd:
+            protocol = "FTP"
 
         if tcp_flags_hex:
             try:

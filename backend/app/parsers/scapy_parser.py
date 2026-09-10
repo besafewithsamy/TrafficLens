@@ -8,6 +8,7 @@ from scapy.all import PcapReader
 from scapy.layers.dns import DNS
 from scapy.layers.http import HTTPRequest, HTTPResponse
 from scapy.layers.inet import ICMP, IP, TCP, UDP
+from scapy.layers.inet6 import IPv6
 from scapy.layers.l2 import ARP, Ether
 from scapy.layers.tls.record import TLS  # may be absent in minimal installs
 
@@ -40,6 +41,26 @@ WELL_KNOWN_PORTS: dict[int, str] = {
     8080: "HTTP-alt",
     8443: "HTTPS-alt",
     4444: "C2-PORT",
+}
+
+# UDP-only protocol labels (port heuristic)
+UDP_PORT_PROTOCOLS: dict[int, str] = {
+    443: "QUIC",  # UDP 443 is the QUIC/HTTP3 transport
+    67: "DHCP",  # server
+    68: "DHCP",  # client
+    5353: "mDNS",
+    1900: "SSDP",
+    547: "DHCPv6",
+    546: "DHCPv6",
+    88: "Kerberos",
+}
+
+# TLS record version bytes → label (from record header, not ClientHello offer)
+TLS_RECORD_VERSIONS = {
+    b"\x03\x01": "TLS 1.0",
+    b"\x03\x02": "TLS 1.1",
+    b"\x03\x03": "TLS 1.2",
+    b"\x03\x04": "TLS 1.3",
 }
 
 
@@ -103,6 +124,57 @@ class ScapyParser(PacketParser):
         timestamp = float(pkt.time)
         length = int(getattr(pkt, "len", len(pkt)))
 
+        if IPv6 in pkt:
+            ip6 = pkt[IPv6]
+            src, dst = ip6.src, ip6.dst
+            transport = None
+            sport = dport = None
+            flags: list[str] = []
+            app_protocol = None
+            metadata: dict[str, Any] = {}
+
+            if Ether in pkt:
+                metadata["eth.src"] = pkt[Ether].src
+                metadata["eth.dst"] = pkt[Ether].dst
+            metadata["ipv6.hop_limit"] = int(ip6.hlim)
+            if ip6.fl:
+                metadata["ipv6.flow_label"] = int(ip6.fl)
+
+            if TCP in pkt:
+                transport = "TCP"
+                tcp = pkt[TCP]
+                sport, dport = int(tcp.sport), int(tcp.dport)
+                flags = ScapyParser._tcp_flags(int(tcp.flags))
+                metadata["seq"] = int(tcp.seq)
+                metadata["win"] = int(tcp.window)
+                app_protocol = ScapyParser._guess_app_protocol(sport, dport, pkt)
+            elif UDP in pkt:
+                transport = "UDP"
+                udp = pkt[UDP]
+                sport, dport = int(udp.sport), int(udp.dport)
+                app_protocol = (
+                    "QUIC" if dport == 443 or sport == 443
+                    else ScapyParser._guess_app_protocol(sport, dport, pkt)
+                )
+            elif pkt.haslayer(ICMP):
+                transport = "ICMP"
+
+            protocol = app_protocol or transport or "IPv6"
+            ScapyParser._extract_hints(pkt, metadata)
+            return NormalizedPacket(
+                timestamp=timestamp,
+                source_ip=src,
+                destination_ip=dst,
+                protocol=protocol,
+                transport=transport,
+                source_port=sport,
+                destination_port=dport,
+                length=length,
+                flags=flags,
+                metadata=metadata,
+                packet_reference=index,
+            )
+
         if IP in pkt:
             ip_layer = pkt[IP]
             src, dst = ip_layer.src, ip_layer.dst
@@ -128,7 +200,10 @@ class ScapyParser(PacketParser):
                 transport = "UDP"
                 udp = pkt[UDP]
                 sport, dport = int(udp.sport), int(udp.dport)
-                app_protocol = ScapyParser._guess_app_protocol(sport, dport, pkt)
+                app_protocol = (
+                    "QUIC" if dport == 443 or sport == 443
+                    else ScapyParser._guess_app_protocol(sport, dport, pkt)
+                )
             elif ICMP in pkt:
                 transport = "ICMP"
                 icmp = pkt[ICMP]
@@ -193,6 +268,12 @@ class ScapyParser(PacketParser):
             return "HTTP"
         if TLS in pkt:
             return "TLS"
+        # UDP service ports (DHCP/mDNS/SSDP/QUIC transport labels)
+        if pkt.haslayer("UDP"):
+            if dport in UDP_PORT_PROTOCOLS:
+                return UDP_PORT_PROTOCOLS[dport]
+            if sport in UDP_PORT_PROTOCOLS and dport not in (53,):
+                return UDP_PORT_PROTOCOLS[sport]
         return WELL_KNOWN_PORTS.get(dport) or WELL_KNOWN_PORTS.get(sport)
 
     @staticmethod
@@ -249,11 +330,57 @@ class ScapyParser(PacketParser):
         # Raw TLS over 443 without scapy dissection — detect via payload sniffing
         if TLS not in pkt and pkt.haslayer("TCP"):
             try:
-                payload = bytes(pkt[TCP].payload)
+                payload = bytes(pkt["TCP"].payload)
                 if payload[:1] == b"\x16" and len(payload) > 5:
                     sni = ScapyParser._try_extract_sni(payload)
                     if sni:
                         metadata["tls.sni"] = sni
+                    # record-layer version (bytes 1-2 of the TLS record header)
+                    version = TLS_RECORD_VERSIONS.get(payload[1:3])
+                    if version:
+                        metadata["tls.record_version"] = version
+            except Exception:
+                pass
+
+        # ---- Plain-text protocol banners (server greeting strings) ----
+        if pkt.haslayer("TCP") and not pkt.haslayer("HTTP"):
+            try:
+                payload = bytes(pkt["TCP"].payload)
+                if payload and (b"\r\n" in payload or b"\n" in payload):
+                    banner = payload.split(b"\r\n")[0][:120]
+                    text = banner.decode("utf-8", "replace")
+                    # SSH: "SSH-2.0-OpenSSH_9.6" etc.
+                    if text.startswith("SSH-"):
+                        metadata["ssh.banner"] = text
+                    # SMTP: "220 mail.example.com ESMTP Postfix"
+                    elif text.startswith("220") and ("SMTP" in text or "ESMTP" in text):
+                        metadata["smtp.banner"] = text
+                    # FTP: "220 ftp.example.com FTP server ready" / "220-..."
+                    elif text.startswith("220-") or "FTP" in text[:40]:
+                        metadata["ftp.banner"] = text
+            except Exception:
+                pass
+
+        # ---- DHCP: message type + hostname option via BOOTP layer ----
+        if pkt.haslayer("BOOTP"):
+            try:
+                from scapy.layers.dhcp import BOOTP, DHCP as ScapyDHCP
+
+                bootp = pkt[BOOTP]
+                if ScapyDHCP in pkt:
+                    for opt in pkt[ScapyDHCP].options:
+                        if isinstance(opt, tuple) and len(opt) >= 2:
+                            name, value = opt[0], opt[1]
+                            if name == "message-type":
+                                # 1=DISCOVER 2=OFFER 3=REQUEST 5=ACK
+                                dhcp_types = {1: "DISCOVER", 2: "OFFER", 3: "REQUEST", 4: "DECLINE", 5: "ACK", 6: "NAK", 7: "RELEASE"}
+                                metadata["dhcp.message_type"] = dhcp_types.get(int(value), str(value))
+                            elif name == "hostname":
+                                metadata["dhcp.hostname"] = (
+                                    value.decode("utf-8", "replace") if isinstance(value, bytes) else str(value)
+                                )
+                if bootp.yiaddr and str(bootp.yiaddr) != "0.0.0.0":
+                    metadata["dhcp.assigned_ip"] = str(bootp.yiaddr)
             except Exception:
                 pass
 

@@ -153,7 +153,7 @@ def extract_tls(parsed: ParsedCapture, flows: list[dict] | None = None) -> list[
                 "server_ip": key[2],
                 "server_port": key[3],
                 "sni": pkt.metadata.get("tls.sni"),
-                "version": None,
+                "version": pkt.metadata.get("tls.record_version"),
                 "bytes": 0,
                 "packets": 0,
                 "first_seen": pkt.timestamp,
@@ -167,6 +167,9 @@ def extract_tls(parsed: ParsedCapture, flows: list[dict] | None = None) -> list[
         s["packet_refs"].append(pkt.packet_reference)
         if pkt.metadata.get("tls.sni") and not s["sni"]:
             s["sni"] = pkt.metadata["tls.sni"]
+        # prefer the first observed record version (initial ClientHello)
+        if not s["version"] and pkt.metadata.get("tls.record_version"):
+            s["version"] = pkt.metadata["tls.record_version"]
 
     results = sorted(sessions.values(), key=lambda s: s["first_seen"])
     return results

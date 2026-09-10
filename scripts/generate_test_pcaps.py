@@ -14,7 +14,8 @@ import random
 import sys
 from pathlib import Path
 
-from scapy.all import ARP, IP, Ether, TCP, UDP, wrpcap
+from scapy.all import ARP, IP, IPv6, Ether, TCP, UDP, wrpcap
+from scapy.layers.dhcp import BOOTP, DHCP as ScapyDHCP
 from scapy.layers.dns import DNS, DNSQR, DNSRR
 
 BASE_TS = 1717252200.0
@@ -31,6 +32,10 @@ HOSTS = {
     "ext_api": "140.82.121.6",
     "suspicious": "185.234.72.19",
     "cdn": "151.101.1.69",
+    # IPv6 hosts
+    "v6_ws": "fd00::42",
+    "v6_ext": "2606:4700:4700::1111",
+    "v6_dns": "fd00::1",
 }
 
 MAC_LOCAL = "aa:bb:cc:dd:ee:01"
@@ -331,6 +336,116 @@ def scenario_dga_domains() -> list:
     return pkts
 
 
+def scenario_ipv6_traffic() -> list:
+    """IPv6: DNS + HTTP + ping over v6 (unique-local ↔ global addresses)."""
+    pkts = []
+    ws, dns_srv, ext = HOSTS["v6_ws"], HOSTS["v6_dns"], HOSTS["v6_ext"]
+    mac = MAC_LOCAL
+    # v6 DNS (query + response)
+    q = Ether(src=mac, dst=MAC_REMOTE) / IPv6(src=ws, dst=dns_srv) / UDP(sport=34500, dport=53) / DNS(id=5000, qr=0, qd=DNSQR(qname="example.org", qtype="AAAA"))
+    q.time = BASE_TS
+    # response with AAAA answer: build via scapy's own AAAA field encoder
+    rr = DNSRR(rrname="example.org", ttl=60, type=28, rdata="2606:4700:4700::1111")  # AAAA
+    r = Ether(src=MAC_REMOTE, dst=mac) / IPv6(src=dns_srv, dst=ws) / UDP(sport=53, dport=34500) / DNS(id=5000, qr=1, ra=1, an=rr)
+    r.time = BASE_TS + 0.02
+    pkts += [q, r]
+    # v6 TCP HTTP (request + response)
+    req = Ether(src=mac, dst=MAC_REMOTE) / IPv6(src=ws, dst=ext) / TCP(sport=54600, dport=80, flags="PA", seq=1) / (
+        b"GET / HTTP/1.1\r\nHost: example.org\r\nUser-Agent: Mozilla/5.0\r\n\r\n"
+    )
+    req.time = BASE_TS + 0.1
+    resp = Ether(src=MAC_REMOTE, dst=mac) / IPv6(src=ext, dst=ws) / TCP(sport=80, dport=54600, flags="PA", seq=1) / (
+        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhi"
+    )
+    resp.time = BASE_TS + 0.12
+    pkts += [req, resp]
+    # v6 ICMPv6 echo request + reply
+    from scapy.layers.inet6 import ICMPv6EchoRequest, ICMPv6EchoReply
+    e1 = Ether(src=mac, dst=MAC_REMOTE) / IPv6(src=ws, dst=ext) / ICMPv6EchoRequest()
+    e1.time = BASE_TS + 1
+    e2 = Ether(src=MAC_REMOTE, dst=mac) / IPv6(src=ext, dst=ws) / ICMPv6EchoReply()
+    e2.time = BASE_TS + 1.05
+    pkts += [e1, e2]
+    pkts.sort(key=lambda p: float(p.time))
+    return pkts
+
+
+def scenario_quic_traffic() -> list:
+    """QUIC/HTTP3: UDP 443 initial + handshake-looking long-header packets."""
+    pkts = []
+    ws, cdn = HOSTS["workstation"], HOSTS["cdn"]
+    # long-header QUIC initial (0x18xx first byte, random-looking payload)
+    import random as _r
+    rng = _r.Random(7)
+    for i in range(4):
+        ts = BASE_TS + i * 0.1
+        hdr = bytes([0x18 + (i % 3)]) + rng.randbytes(8)
+        pkt = _eth(ws) / _ip(ws, cdn) / UDP(sport=55000 + i * 0, dport=443) / (hdr + rng.randbytes(64))
+        pkt.time = ts
+        pkts.append(pkt)
+    # server responses
+    for i in range(2):
+        ts = BASE_TS + 0.5 + i * 0.1
+        hdr = bytes([0x40 + i]) + rng.randbytes(8)
+        pkt = _eth(cdn) / _ip(cdn, ws) / UDP(sport=443, dport=55000) / (hdr + rng.randbytes(64))
+        pkt.time = ts
+        pkts.append(pkt)
+    pkts.sort(key=lambda p: float(p.time))
+    return pkts
+
+
+def scenario_protocol_banners() -> list:
+    """SSH/SMTP/FTP server banners — plaintext greeting strings."""
+    pkts = []
+    ws = HOSTS["workstation"]
+    mail_srv, ssh_srv, ftp_srv = "93.184.216.50", "93.184.216.51", "93.184.216.52"
+
+    def banner_flow(dst: str, dport: int, banner: bytes, sport: int):
+        out = []
+        out.append(tcp_syn(BASE_TS + dport * 0.01, ws, dst, sport, dport, seq=1))
+        out.append(tcp_synack(BASE_TS + dport * 0.01 + 0.05, dst, ws, dport, sport, seq=2, ack=2))
+        srv = _eth(dst) / _ip(dst, ws) / TCP(sport=dport, dport=sport, flags="PA", seq=2) / banner
+        srv.time = BASE_TS + dport * 0.01 + 0.1
+        out.append(srv)
+        ack = _eth(ws) / _ip(ws, dst) / TCP(sport=sport, dport=dport, flags="A", seq=2, ack=2 + len(banner))
+        ack.time = BASE_TS + dport * 0.01 + 0.15
+        out.append(ack)
+        return out
+
+    pkts += banner_flow(ssh_srv, 22, b"SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu1\r\n", 55100)
+    pkts += banner_flow(mail_srv, 25, b"220 mail.example.com ESMTP Postfix (Ubuntu)\r\n", 55101)
+    pkts += banner_flow(ftp_srv, 21, b"220 ftp.example.com FTP server (vsftpd 3.0.5) ready\r\n", 55102)
+    pkts.sort(key=lambda p: float(p.time))
+    return pkts
+
+
+def scenario_dhcp_lease() -> list:
+    """DHCP DORA: DISCOVER → OFFER → REQUEST → ACK with hostname option."""
+    pkts = []
+    client, server = HOSTS["workstation"], HOSTS["dns_server"]
+    mac = MAC_LOCAL
+
+    def dhcp(ts: float, src: str, dst: str, sport: int, dport: int, msg_type: int, yiaddr: str = "0.0.0.0", hostname: bytes | None = None):
+        opts = [("message-type", msg_type), "end"]
+        if hostname:
+            opts = [("message-type", msg_type), ("hostname", hostname), "end"]
+        pkt = _eth(src) / _ip(src, dst) / UDP(sport=sport, dport=dport) / BOOTP(
+            op=1 if msg_type in (1, 3) else 2,
+            chaddr=bytes.fromhex("020304050607" + "00" * 10),
+            yiaddr=yiaddr,
+            xid=0x1234,
+        ) / ScapyDHCP(options=opts)
+        pkt.time = ts
+        return pkt
+
+    pkts.append(dhcp(BASE_TS, client, "255.255.255.255", 68, 67, 1, hostname=b"ws-laptop-01"))
+    pkts.append(dhcp(BASE_TS + 1, server, client, 67, 68, 2, yiaddr="192.168.1.99"))
+    pkts.append(dhcp(BASE_TS + 2, client, "255.255.255.255", 68, 67, 3, hostname=b"ws-laptop-01"))
+    pkts.append(dhcp(BASE_TS + 3, server, client, 67, 68, 5, yiaddr="192.168.1.99"))
+    pkts.sort(key=lambda p: float(p.time))
+    return pkts
+
+
 SCENARIOS = {
     "normal_traffic.pcap": scenario_normal_traffic,
     "port_scan.pcap": scenario_port_scan,
@@ -342,6 +457,10 @@ SCENARIOS = {
     "data_exfiltration.pcap": scenario_data_exfiltration,
     "low_slow_beacon.pcap": scenario_low_slow_beacon,
     "dga_domains.pcap": scenario_dga_domains,
+    "ipv6_traffic.pcap": scenario_ipv6_traffic,
+    "quic_traffic.pcap": scenario_quic_traffic,
+    "protocol_banners.pcap": scenario_protocol_banners,
+    "dhcp_lease.pcap": scenario_dhcp_lease,
 }
 
 

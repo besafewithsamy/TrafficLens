@@ -172,6 +172,21 @@ class HostProfiler:
             sni = pkt.metadata.get("tls.sni")
             if sni and pkt.source_ip in hosts:
                 hosts[pkt.source_ip].note_hostname(sni)  # client visited sni — peer hint
+            # DHCP hostname: the client announcing its own name
+            dhcp_host = pkt.metadata.get("dhcp.hostname")
+            if dhcp_host and pkt.source_ip in hosts:
+                hosts[pkt.source_ip].note_hostname(dhcp_host)
+            # SMTP/FTP banners carry the server's own hostname
+            for banner_key in ("smtp.banner", "ftp.banner"):
+                banner = pkt.metadata.get(banner_key)
+                if banner and pkt.source_ip in hosts:
+                    # "220 mail.example.com ESMTP ..." → take first token after code
+                    try:
+                        parts = banner.split()
+                        if len(parts) >= 2 and not parts[1].startswith("("):
+                            hosts[pkt.source_ip].note_hostname(parts[1])
+                    except Exception:
+                        pass
 
         results = []
         for ip, a in hosts.items():

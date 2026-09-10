@@ -20,6 +20,7 @@ Packets → Flows → Hosts → Behaviors → Events → Investigation
 ### Traffic Investigation
 
 * Reconstructs bidirectional TCP and UDP flows
+* IPv4 and IPv6 traffic with correct internal/external direction classification
 * Tracks packets, bytes, duration, and direction
 * Detects retransmissions, resets, and connection failures
 * Provides packet-level evidence for investigations
@@ -28,9 +29,12 @@ Packets → Flows → Hosts → Behaviors → Events → Investigation
 
 * Builds profiles for observed hosts
 * Identifies services, ports, and communication relationships
-* Reconstructs DNS transactions
+* Reconstructs DNS transactions (A and AAAA records)
 * Analyzes HTTP requests and responses
-* Extracts TLS sessions and SNI information
+* Extracts TLS sessions with SNI and negotiated version
+* Labels QUIC (HTTP/3) traffic on UDP 443
+* Extracts plaintext protocol banners (SSH, SMTP, FTP)
+* Decodes DHCP conversations (DORA) with client hostnames
 * Provides protocol-level behavioral statistics
 
 ### Suspicious Activity Detection
@@ -145,6 +149,10 @@ The generator includes scenarios such as:
 * Lateral movement
 * Data exfiltration
 * DGA domains
+* IPv6 traffic
+* QUIC traffic
+* Protocol banners (SSH/SMTP/FTP)
+* DHCP lease
 
 ## Architecture
 

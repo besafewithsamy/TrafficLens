@@ -16,10 +16,31 @@ PRIVATE_V4_PREFIXES = ("10.", "192.168.", "172.16.", "172.17.", "172.18.", "172.
                        "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
                        "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.")
 
+# IPv6: unique-local (fc00::/7 → fc/fd prefix), link-local (fe80::/10), loopback
+PRIVATE_V6_PREFIXES = ("fc", "fd", "fe80", "fe9", "fea", "feb")
+
+
+def _is_private_v6(ip: str) -> bool:
+    low = ip.lower()
+    if low == "::1":
+        return True
+    # fc00::/7 — first hextet starts with fc or fd
+    first = low.split(":")[0]
+    if first.startswith(("fc", "fd")) and len(first) <= 4:
+        return True
+    # fe80::/10 — link-local
+    if first.startswith("fe8") or first.startswith("fe9") or first.startswith("fea") or first.startswith("feb"):
+        return True
+    if low.startswith("fe80:") or low == "fe80::":
+        return True
+    return False
+
 
 def is_private_ip(ip: str | None) -> bool:
     if not ip:
         return False
+    if ":" in ip:  # IPv6
+        return _is_private_v6(ip)
     return ip.startswith(PRIVATE_V4_PREFIXES) or ip == "127.0.0.1" or ip == "::1"
 
 
