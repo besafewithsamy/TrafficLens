@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import alerts, captures, engineer, flows, hosts_protocols, jobs, timeline_graph
+from app.api import alerts, captures, engineer, flows, hosts_protocols, jobs, live, timeline_graph
 from app.core.config import settings
 from app.core.database import Base, engine
 from app.parsers import register_default_parsers
@@ -43,6 +43,7 @@ app.include_router(hosts_protocols.router)
 app.include_router(alerts.router)
 app.include_router(timeline_graph.router)
 app.include_router(engineer.router)
+app.include_router(live.router)
 
 
 @app.get("/api/health")
