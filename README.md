@@ -2,7 +2,9 @@
   <img src="assets/Logo.png" alt="PacketSleuth" width="480" />
 </p>
 
-[![CI](https://github.com/besafewithsamy/PacketSleuth/actions/workflows/ci.yml/badge.svg)](https://github.com/besafewithsamy/PacketSleuth/actions/workflows/ci.yml)   <img src="https://img.shields.io/badge/Docker-2CA5E0?style=for-the-badge&logo=docker&logoColor=white"/>     
+[![CI](https://github.com/besafewithsamy/PacketSleuth/actions/workflows/ci.yml/badge.svg)](https://github.com/besafewithsamy/PacketSleuth/actions/workflows/ci.yml)  
+
+<img src="https://img.shields.io/badge/Docker-2CA5E0?style=for-the-badge&logo=docker&logoColor=white"/>  <img src="https://img.shields.io/badge/Python-FFD43B?style=for-the-badge&logo=python&logoColor=blue" /> <img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" /> <img src="https://img.shields.io/badge/fastapi-109989?style=for-the-badge&logo=FASTAPI&logoColor=white" />
 
 **Network traffic analysis and investigation, built around understanding what happened.**
 
