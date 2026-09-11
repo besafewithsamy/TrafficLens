@@ -23,8 +23,8 @@ test('upload → analyze → alerts appear', async ({ page }) => {
   await fc.setFiles('../test-data/synthetic/c2_beacon.pcap')
 
   // Wait for the upload to register, then start analysis
-  await expect(page.getByText('Analyze')).toBeVisible({ timeout: 30_000 })
-  await page.getByRole('button', { name: 'Analyze', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Analyze' })).toBeVisible({ timeout: 30_000 })
+  await page.getByRole('button', { name: 'Analyze' }).click()
 
   // Analysis completes: the selected capture's status pill turns to completed
   await expect(

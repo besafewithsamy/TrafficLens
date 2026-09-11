@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import cytoscape, { type ElementDefinition } from 'cytoscape'
+import cytoscape, { type Core, type ElementDefinition } from 'cytoscape'
 import fcose from 'cytoscape-fcose'
 import { api } from '../api/client'
 import { CapturePicker } from '../components/CapturePicker'
@@ -8,6 +8,16 @@ import { ErrorState } from '../components/states'
 import { formatBytes } from '../components/ui'
 import { useSelectedCapture } from '../hooks/captures'
 import type { Graph, GraphNodeData } from '../types/api'
+import {
+  computeNodeMetrics,
+  computeTier,
+  edgeCurveForTier,
+  labeledNodeIds,
+  layoutForTier,
+  leafDomainIds,
+  nodeSize,
+  viewportForTier,
+} from './graph-scaling'
 
 cytoscape.use(fcose)
 
@@ -62,17 +72,11 @@ function buildEdgeGroups(graph: Graph): EdgeGroup[] {
   return groups
 }
 
-const FCOSE_LAYOUT = {
-  name: 'fcose',
-  quality: 'default' as const,
-  animate: true,
-  animationDuration: 500,
-  fit: true,
-  padding: 30,
-  nodeSeparation: 120,
-  idealEdgeLength: (edge: { data: (k: string) => number }) =>
-    90 - Math.min(40, Math.log2(1 + (edge.data('packets') ?? 0)) * 10),
-  nodeRepulsion: () => 9000,
+interface VisibleElements {
+  elements: ElementDefinition[]
+  visibleIds: Set<string>
+  hiddenLeafCount: number
+  tier: 'detail' | 'balanced' | 'scale'
 }
 
 export function GraphPage() {
@@ -82,7 +86,10 @@ export function GraphPage() {
   const [nodeFilters, setNodeFilters] = useState<Set<string>>(
     () => new Set(['domain', 'service']),
   )
+  const [showLeaves, setShowLeaves] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const cyRef = useRef<Core | null>(null)
+  const cyCaptureRef = useRef<string | null>(null)
 
   const { data: graph, isError } = useQuery({
     queryKey: ['graph', effectiveCaptureId],
@@ -91,6 +98,8 @@ export function GraphPage() {
   })
 
   const edgeGroups = useMemo(() => (graph ? buildEdgeGroups(graph) : []), [graph])
+  const metrics = useMemo(() => (graph ? computeNodeMetrics(graph) : null), [graph])
+  const leaves = useMemo(() => (graph && metrics ? leafDomainIds(metrics, graph) : null), [graph, metrics])
 
   // null = all enabled (fresh capture); user toggles carve out exclusions
   const activeEdgeFilters = edgeFilters ?? new Set(edgeGroups.map((g) => g.key))
@@ -98,13 +107,18 @@ export function GraphPage() {
     setEdgeFilters(toggleInSet(activeEdgeFilters, key))
   }
 
-  // Filtered elements: hosts always render; domain/service nodes and edge
-  // types are toggleable. Edges survive only when both endpoints do.
-  const elements = useMemo(() => {
-    if (!graph) return []
-    const nodes = graph.nodes.filter(
-      (n) => n.data.type === 'host' || !n.data.type || nodeFilters.has(n.data.type),
-    )
+  // Visible elements after node/edge filters and (at scale) leaf collapsing.
+  // Tier is decided from the PRE-collapse node count — collapsing leaves is
+  // what the scale tier does, so it can't depend on its own output.
+  const visible = useMemo<VisibleElements>(() => {
+    if (!graph) return { elements: [], visibleIds: new Set(), hiddenLeafCount: 0, tier: 'detail' }
+    const preCollapseTier = tierOf(graph, nodeFilters)
+    const collapseLeaves = !showLeaves && preCollapseTier === 'scale'
+    const nodes = graph.nodes.filter((n) => {
+      if (n.data.type !== 'host' && n.data.type && !nodeFilters.has(n.data.type)) return false
+      if (collapseLeaves && leaves?.has(n.data.id)) return false
+      return true
+    })
     const nodeIds = new Set(nodes.map((n) => n.data.id))
     const edges = graph.edges.filter(
       (e) =>
@@ -112,74 +126,152 @@ export function GraphPage() {
         nodeIds.has(e.data.source) &&
         nodeIds.has(e.data.target),
     )
-    return [
-      ...nodes.map((n) => ({ data: { ...n.data } })),
-      ...edges.map((e) => ({ data: { ...e.data } })),
-    ] as ElementDefinition[]
-  }, [graph, activeEdgeFilters, nodeFilters])
-
-  useEffect(() => {
-    if (!containerRef.current) return
-
-    const cy = cytoscape({
-      container: containerRef.current,
-      elements,
-      style: [
-        {
-          selector: 'node',
-          style: {
-            label: 'data(label)',
-            'background-color': (ele: { data: (k: string) => any }) =>
-              NODE_STYLE[ele.data('type')]?.bg ?? '#1e293b',
-            'border-color': (ele: { data: (k: string) => any }) =>
-              ele.data('alert_count') > 0
-                ? '#f87171'
-                : NODE_STYLE[ele.data('type')]?.border ?? '#38bdf8',
-            'border-width': (ele: { data: (k: string) => any }) =>
-              ele.data('alert_count') > 0 ? 3 : 1.5,
-            color: '#94a3b8',
-            'font-size': 9,
-            'font-family': 'ui-monospace, monospace',
-            width: 26,
-            height: 26,
-            'min-zoomed-font-size': 6,
-          },
-        },
-        {
-          selector: 'node:selected',
-          style: { 'border-width': 4, 'border-color': '#f59e0b' },
-        },
-        {
-          selector: 'edge',
-          style: {
-            width: (ele: { data: (k: string) => any }) =>
-              Math.min(1 + Math.log2(1 + (ele.data('packets') ?? 1)), 6),
-            'line-color': (ele: { data: (k: string) => any }) => edgeColor(ele.data('type')),
-            'target-arrow-shape': 'triangle',
-            'arrow-scale': 0.7,
-            'curve-style': 'bezier',
-            opacity: 0.75,
-          },
-        },
-        {
-          selector: 'edge:selected',
-          style: { opacity: 1, width: 4 },
-        },
-      ],
-      layout: FCOSE_LAYOUT,
-    })
-
-    cy.on('tap', 'node', (e) => {
-      const d = e.target.data() as GraphNodeData
-      setSelectedNode(d)
-    })
-    cy.on('tap', 'edge', () => setSelectedNode(null))
-    cy.fit(undefined, 30)
-
-    return () => {
-      cy.destroy()
+    const hiddenLeafCount = collapseLeaves && leaves ? [...leaves].filter((id) => !nodeIds.has(id)).length : 0
+    return {
+      elements: [
+        ...nodes.map((n) => ({ data: { ...n.data } })),
+        ...edges.map((e) => ({ data: { ...e.data } })),
+      ] as ElementDefinition[],
+      visibleIds: nodeIds,
+      hiddenLeafCount,
+      tier: collapseLeaves
+        ? 'scale'
+        : computeTier(nodeIds.size || 1),
     }
-  }, [elements])
+  }, [graph, nodeFilters, activeEdgeFilters, showLeaves, leaves])
+
+  const tier = visible.tier
+
+  // Fresh capture → reset user overrides
+  useEffect(() => {
+    setEdgeFilters(null)
+    setShowLeaves(false)
+    setSelectedNode(null)
+  }, [effectiveCaptureId])
+
+  // Persistent instance per capture: filter toggles diff elements in/out and
+  // run an incremental layout instead of destroying the whole graph, so zoom
+  // position survives and big graphs stay responsive.
+  useEffect(() => {
+    if (!graph || !metrics || !containerRef.current) return
+
+    const isNewCapture = cyRef.current === null || cyCaptureRef.current !== effectiveCaptureId
+    const labeled = labeledNodeIds(metrics, tier, graph)
+
+    const cyStyle: cytoscape.StylesheetStyle[] = [
+      {
+        selector: 'node',
+        style: {
+          label: (ele: any) => (labeled.has(ele.data('id')) ? ele.data('label') : ''),
+          'background-color': (ele: { data: (k: string) => any }) =>
+            NODE_STYLE[ele.data('type')]?.bg ?? '#1e293b',
+          'border-color': (ele: { data: (k: string) => any }) =>
+            ele.data('alert_count') > 0
+              ? '#f87171'
+              : NODE_STYLE[ele.data('type')]?.border ?? '#38bdf8',
+          'border-width': (ele: { data: (k: string) => any }) =>
+            ele.data('alert_count') > 0 ? 3 : 1.5,
+          color: '#94a3b8',
+          'font-size': 9,
+          'font-family': 'ui-monospace, monospace',
+          width: (ele: any) => nodeSize(metrics.scores.get(ele.data('id')) ?? 0),
+          height: (ele: any) => nodeSize(metrics.scores.get(ele.data('id')) ?? 0),
+          'min-zoomed-font-size': 9,
+        },
+      },
+      {
+        selector: 'node:selected',
+        style: { 'border-width': 4, 'border-color': '#f59e0b', label: 'data(label)' },
+      },
+      {
+        selector: 'node.highlighted',
+        style: { label: 'data(label)', 'z-index': 9999 },
+      },
+      {
+        selector: 'edge',
+        style: {
+          width: (ele: { data: (k: string) => number }) =>
+            Math.min(1 + Math.log2(1 + (ele.data('packets') ?? 1)), 6),
+          'line-color': (ele: { data: (k: string) => any }) => edgeColor(ele.data('type')),
+          'target-arrow-shape': 'triangle',
+          'arrow-scale': 0.7,
+          'curve-style': edgeCurveForTier(tier),
+          opacity: 0.75,
+        },
+      },
+      {
+        selector: 'edge:selected',
+        style: { opacity: 1, width: 4 },
+      },
+    ]
+
+    if (isNewCapture) {
+      cyRef.current?.destroy()
+      const cy = cytoscape({
+        container: containerRef.current,
+        elements: visible.elements,
+        style: cyStyle,
+        layout: layoutOptions(visible.visibleIds.size, tier, false),
+        ...viewportForTier(tier),
+      })
+      cy.on('tap', 'node', (e) => {
+        setSelectedNode(e.target.data() as GraphNodeData)
+      })
+      cy.on('tap', 'edge', () => setSelectedNode(null))
+      cy.on('mouseover', 'node', (e) => e.target.addClass('highlighted'))
+      cy.on('mouseout', 'node', (e) => e.target.removeClass('highlighted'))
+      cyRef.current = cy
+      cyCaptureRef.current = effectiveCaptureId
+      cy.fit(undefined, 30)
+    } else {
+      const cy = cyRef.current
+      if (!cy) return
+
+      // diff: remove vanished, add new, keep positions of survivors
+      const wanted = new Set(visible.elements.map((el) => el.data.id))
+      const toRemove = cy.elements().filter((el: any) => !wanted.has(el.data().id))
+      const existing = new Set(cy.elements().map((el: any) => el.data().id))
+      const toAdd = visible.elements.filter((el) => !existing.has(el.data.id))
+      if (toRemove.length > 0) cy.remove(toRemove)
+
+      const addedNodes = toAdd.filter((el: any) => 'source' in el.data === false && 'target' in el.data === false)
+      if (addedNodes.length > 0) {
+        cy.add(toAdd)
+        // Seed new nodes beside a connected neighbor when possible; fcose's
+        // incremental (randomize:false) path crashes on added nodes, so small
+        // deltas are positioned locally and only large deltas re-layout.
+        const smallDelta = addedNodes.length <= 30
+        if (smallDelta) {
+          for (const el of addedNodes) {
+            const node = cy.getElementById(String(el.data.id))
+            if (node.empty() || !node.isNode()) continue
+            const neighbor = node.connectedEdges().targets()[0] ?? node.connectedEdges().sources()[0]
+            const base = neighbor && !neighbor.empty() ? neighbor.position() : { x: 0, y: 0 }
+            node.position({ x: base.x + (Math.random() * 60 - 30), y: base.y + (Math.random() * 60 - 30) })
+          }
+        } else {
+          try {
+            cy.layout(layoutOptions(visible.visibleIds.size, tier, false)).run()
+          } catch {
+            // layout is cosmetic; never let it take the page down
+          }
+          cy.fit(undefined, 30)
+        }
+      } else if (toAdd.length > 0) {
+        cy.add(toAdd)
+      }
+      cy.style().fromJson(cyStyle)
+    }
+  }, [visible, tier, metrics, graph, effectiveCaptureId])
+
+  // container ref may not be mounted on first effect run for a new capture
+  useEffect(() => {
+    return () => {
+      cyRef.current?.destroy()
+      cyRef.current = null
+      cyCaptureRef.current = null
+    }
+  }, [])
 
   return (
     <div className="flex h-full flex-col p-8">
@@ -189,6 +281,9 @@ export function GraphPage() {
           <span className="text-xs text-slate-500">
             {graph.stats.host_count} hosts · {graph.stats.domain_count} domains ·{' '}
             {graph.stats.service_count} services · {graph.stats.edge_count} edges
+            <span className="ml-2 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">
+              {tier}
+            </span>
           </span>
         )}
         <div className="ml-auto">
@@ -247,9 +342,17 @@ export function GraphPage() {
               </button>
             )
           })}
+          {visible.hiddenLeafCount > 0 && (
+            <button
+              onClick={() => setShowLeaves(true)}
+              className="mt-2 block w-full rounded border border-slate-700 px-1.5 py-1 text-left text-slate-400 hover:border-slate-500 hover:text-slate-300"
+            >
+              {visible.hiddenLeafCount} leaf domains hidden — show
+            </button>
+          )}
           <div className="mt-2 border-t border-slate-800 pt-1.5 text-slate-600">
-            {elements.length > 0
-              ? `${elements.length} shown`
+            {visible.elements.length > 0
+              ? `${visible.elements.length} shown`
               : 'nothing matches filters'}
           </div>
         </div>
@@ -311,6 +414,23 @@ export function GraphPage() {
       </div>
     </div>
   )
+}
+
+// tier before `visible` exists (used to decide leaf collapsing)
+function tierOf(graph: Graph, nodeFilters: Set<string>): 'detail' | 'balanced' | 'scale' {
+  const kept = graph.nodes.filter(
+    (n) => n.data.type === 'host' || !n.data.type || nodeFilters.has(n.data.type),
+  )
+  return computeTier(kept.length)
+}
+
+function layoutOptions(nodeCount: number, tier: 'detail' | 'balanced' | 'scale', incremental: boolean) {
+  const opts = layoutForTier(nodeCount, tier)
+  if (incremental) {
+    // re-layout only repositions; keep existing positions as the seed
+    return { ...opts, randomize: false, animate: false, fit: false }
+  }
+  return opts
 }
 
 function toggleInSet(current: Iterable<string>, name: string): Set<string> {

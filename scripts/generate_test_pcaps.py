@@ -443,6 +443,61 @@ def scenario_dhcp_lease() -> list:
     return pkts
 
 
+def scenario_large_graph() -> list:
+    """Scale test: many hosts, domains and flows to exercise the graph's large-capture tiers.
+
+    ~50 hosts, ~120 domains (most leaf-only DGA-style), ~400 flows — produces
+    500+ graph nodes so the scale tier (auto-collapse, selective labels,
+    draft layout) can be verified end-to-end.
+    """
+    pkts = []
+    ws, dns_srv = HOSTS["workstation"], HOSTS["dns_server"]
+    rng = random.Random(4242)
+
+    # 60 extra internal hosts + 30 external servers (using 10.x ranges for variety)
+    internal = [f"192.168.1.{100 + i}" for i in range(60)]
+    external = [f"203.0.113.{10 + i}" for i in range(30)]
+
+    # each internal host browses to a few real domains (DNS + HTTP flows)
+    real_domains = ["example.com", "github.com", "wikipedia.org", "cloudflare.com", "debian.org"]
+    for i, host in enumerate(internal):
+        for j in range(3):
+            ts = BASE_TS + i * 3 + j * 0.5
+            domain = real_domains[(i + j) % len(real_domains)]
+            pkts.append(dns_query(ts, host, dns_srv, domain, 5000 + i * 10 + j))
+            pkts.append(dns_response(ts + 0.02, dns_srv, host, domain, 5000 + i * 10 + j))
+            ext = external[(i + j) % len(external)]
+            sport = 40000 + (i * 3 + j) % 20000
+            pkts.append(http_req(ts + 0.05, host, ext, sport, domain))
+            pkts.append(http_resp(ts + 0.06, ext, host, sport))
+
+    # hub traffic: file server talks to every internal host (star topology)
+    fs = HOSTS["file_server"]
+    for i, host in enumerate(internal):
+        pkts.append(tcp_syn(BASE_TS + 200 + i * 0.2, fs, host, 20000 + i, 445))
+        pkts.append(tcp_synack(BASE_TS + 200.1 + i * 0.2, host, fs, 445, 20000 + i))
+
+    # 100 leaf-only DGA domains from one infected host (degree-1 nodes, mostly NXDOMAIN)
+    tld = ["com", "net", "xyz", "top", "info"]
+    for i in range(100):
+        ts = BASE_TS + 300 + i * 0.5
+        label = "".join(rng.choices("bcdfghjklmnpqrstvwxz", k=12)) + "".join(rng.choices("aeiou", k=1)) + "zxq"
+        name = f"{label}.{tld[i % len(tld)]}"
+        pkts.append(dns_query(ts, ws, dns_srv, name, 7000 + i))
+        rcode = 3 if i % 4 != 3 else 0
+        pkts.append(dns_response(ts + 0.03, dns_srv, ws, name, 7000 + i, rcode=rcode))
+
+    # a few resolved DGA domains get TLS sessions (non-leaf domain nodes)
+    for i in range(0, 100, 12):
+        label = "".join(rng.choices("bcdfghjklmnpqrstvwxz", k=12)) + "zxq"
+        name = f"{label}.com"
+        pkts.append(tls_clienthello(BASE_TS + 400 + i * 0.1, ws, external[i % len(external)], 30000 + i, 443, name))
+        pkts.append(tls_server_hello(BASE_TS + 400.05 + i * 0.1, external[i % len(external)], ws, 30000 + i, 443))
+
+    pkts.sort(key=lambda p: float(p.time))
+    return pkts
+
+
 SCENARIOS = {
     "normal_traffic.pcap": scenario_normal_traffic,
     "port_scan.pcap": scenario_port_scan,
@@ -458,6 +513,7 @@ SCENARIOS = {
     "quic_traffic.pcap": scenario_quic_traffic,
     "protocol_banners.pcap": scenario_protocol_banners,
     "dhcp_lease.pcap": scenario_dhcp_lease,
+    "large_graph.pcap": scenario_large_graph,
 }
 
 
