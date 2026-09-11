@@ -2,7 +2,7 @@
   <img src="assets/Logo.png" alt="PacketSleuth" width="480" />
 </p>
 
-[![CI](https://github.com/besafewithsamy/TrafficLens/actions/workflows/ci.yml/badge.svg)](https://github.com/besafewithsamy/TrafficLens/actions/workflows/ci.yml)
+[![CI](https://github.com/besafewithsamy/PacketSleuth/actions/workflows/ci.yml/badge.svg)](https://github.com/besafewithsamy/PacketSleuth/actions/workflows/ci.yml)   <img src="https://img.shields.io/badge/Docker-2CA5E0?style=for-the-badge&logo=docker&logoColor=white"/>     
 
 **Network traffic analysis and investigation, built around understanding what happened.**
 
@@ -99,6 +99,7 @@ PacketSleuth is not limited to security investigations. It also provides network
 * Network issues
 
 ## Quick Start
+
 
 ### One command with Docker (no prerequisites except Docker)
 
