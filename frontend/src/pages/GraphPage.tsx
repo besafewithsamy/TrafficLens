@@ -12,11 +12,13 @@ import {
   computeNodeMetrics,
   computeTier,
   edgeCurveForTier,
+  hubEdgeIds,
   labeledNodeIds,
   layoutForTier,
   leafDomainIds,
   nodeSize,
   viewportForTier,
+  HUB_DEGREE,
 } from './graph-scaling'
 
 cytoscape.use(fcose)
@@ -157,6 +159,8 @@ export function GraphPage() {
 
     const isNewCapture = cyRef.current === null || cyCaptureRef.current !== effectiveCaptureId
     const labeled = labeledNodeIds(metrics, tier, graph)
+    const hubEdges = tier === 'scale' ? hubEdgeIds(metrics.degrees, graph) : new Set<string>()
+    const curveStyle = edgeCurveForTier(tier, hubEdges)
 
     const cyStyle: cytoscape.StylesheetStyle[] = [
       {
@@ -195,7 +199,7 @@ export function GraphPage() {
           'line-color': (ele: { data: (k: string) => any }) => edgeColor(ele.data('type')),
           'target-arrow-shape': 'triangle',
           'arrow-scale': 0.7,
-          'curve-style': edgeCurveForTier(tier),
+          'curve-style': curveStyle,
           opacity: 0.75,
         },
       },
@@ -211,7 +215,7 @@ export function GraphPage() {
         container: containerRef.current,
         elements: visible.elements,
         style: cyStyle,
-        layout: layoutOptions(visible.visibleIds.size, tier, false),
+        layout: layoutOptions(visible.visibleIds.size, tier, metrics.degrees),
         ...viewportForTier(tier),
       })
       cy.on('tap', 'node', (e) => {
@@ -240,18 +244,38 @@ export function GraphPage() {
         // Seed new nodes beside a connected neighbor when possible; fcose's
         // incremental (randomize:false) path crashes on added nodes, so small
         // deltas are positioned locally and only large deltas re-layout.
+        // Hub-adjacent nodes fan out at an angle around the hub instead of
+        // jittering on top of each other.
         const smallDelta = addedNodes.length <= 30
         if (smallDelta) {
+          const seedFan = new Map<string, number>() // hub id → next angle slot
           for (const el of addedNodes) {
             const node = cy.getElementById(String(el.data.id))
             if (node.empty() || !node.isNode()) continue
-            const neighbor = node.connectedEdges().targets()[0] ?? node.connectedEdges().sources()[0]
-            const base = neighbor && !neighbor.empty() ? neighbor.position() : { x: 0, y: 0 }
-            node.position({ x: base.x + (Math.random() * 60 - 30), y: base.y + (Math.random() * 60 - 30) })
+            const edge = node.connectedEdges()[0]
+            if (!edge || edge.empty()) {
+              node.position({ x: Math.random() * 200 - 100, y: Math.random() * 200 - 100 })
+              continue
+            }
+            const other = edge.source().id() === node.id() ? edge.target() : edge.source()
+            const base = other.position()
+            const isHub = (metrics.degrees.get(other.id()) ?? 0) > HUB_DEGREE
+            if (isHub) {
+              const slot = seedFan.get(other.id()) ?? 0
+              seedFan.set(other.id(), slot + 1)
+              const angle = (slot / 8) * 2 * Math.PI + (node.id().charCodeAt(0) % 10) / 10
+              const radius = nodeSize(metrics.scores.get(other.id()) ?? 0) + 70
+              node.position({
+                x: base.x + Math.cos(angle) * radius,
+                y: base.y + Math.sin(angle) * radius,
+              })
+            } else {
+              node.position({ x: base.x + (Math.random() * 60 - 30), y: base.y + (Math.random() * 60 - 30) })
+            }
           }
         } else {
           try {
-            cy.layout(layoutOptions(visible.visibleIds.size, tier, false)).run()
+            cy.layout(layoutOptions(visible.visibleIds.size, tier, metrics.degrees)).run()
           } catch {
             // layout is cosmetic; never let it take the page down
           }
@@ -424,13 +448,12 @@ function tierOf(graph: Graph, nodeFilters: Set<string>): 'detail' | 'balanced' |
   return computeTier(kept.length)
 }
 
-function layoutOptions(nodeCount: number, tier: 'detail' | 'balanced' | 'scale', incremental: boolean) {
-  const opts = layoutForTier(nodeCount, tier)
-  if (incremental) {
-    // re-layout only repositions; keep existing positions as the seed
-    return { ...opts, randomize: false, animate: false, fit: false }
-  }
-  return opts
+function layoutOptions(
+  nodeCount: number,
+  tier: 'detail' | 'balanced' | 'scale',
+  degrees: Map<string, number>,
+) {
+  return layoutForTier(nodeCount, tier, degrees)
 }
 
 function toggleInSet(current: Iterable<string>, name: string): Set<string> {

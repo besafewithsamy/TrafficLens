@@ -64,21 +64,29 @@ export function computeNodeMetrics(graph: Graph): NodeMetrics {
   return { scores, degrees, ranked }
 }
 
-/** Max label count per tier: detail shows everything. */
+/** Max label count per tier: detail shows everything, scale shows alerts only. */
 export const LABEL_LIMITS: Record<Tier, number | null> = {
   detail: null,
   balanced: 40,
-  scale: 25,
+  scale: 0,
 }
 
-/** Node ids whose labels are shown. Detail tier → all. */
+/**
+ * Node ids whose labels are shown.
+ * detail → all; balanced → top-40 + alerts; scale → alerts only (hover and
+ * selection reveal the rest — permanent labels are the hairball's fuel).
+ */
 export function labeledNodeIds(metrics: NodeMetrics, tier: Tier, graph: Graph): Set<string> {
-  const limit = LABEL_LIMITS[tier]
-  if (limit === null) return new Set(graph.nodes.map((n) => n.data.id))
   const labeled = new Set<string>()
   for (const n of graph.nodes) {
     if ((n.data.alert_count ?? 0) > 0) labeled.add(n.data.id)
   }
+  const limit = LABEL_LIMITS[tier]
+  if (limit === null) {
+    for (const n of graph.nodes) labeled.add(n.data.id)
+    return labeled
+  }
+  if (limit === 0) return labeled
   for (const id of metrics.ranked) {
     if (labeled.size >= limit) break
     labeled.add(id)
@@ -102,14 +110,71 @@ export function nodeSize(score: number): number {
   return Math.min(44, 18 + 4 * Math.log2(1 + Math.max(0, score)))
 }
 
+/** Degree from which a node is treated as a hub (fan-out zone). */
+export const HUB_DEGREE = 15
+/** Degree from which an edge is stretched away from its endpoint hub. */
+export const HUB_EDGE_DEGREE = 20
+
+/**
+ * Degree-aware repulsion: hubs push neighbors up to 3x harder so their many
+ * connections get breathing room instead of stacking on top of each other.
+ */
+export function repulsionFor(degree: number, base: number): number {
+  return Math.round(base * (1 + Math.min(2, degree / 40)))
+}
+
+/** Edge-length multiplier: edges fanning out of a hub are stretched. */
+export function hubEdgeFactor(degree: number): number {
+  return degree > HUB_EDGE_DEGREE ? 1.3 : 1
+}
+
+/** Hub edges stretch more; regular edges keep fcose's springiness. */
+export function elasticityFor(isHubEdge: boolean): number {
+  return isHubEdge ? 0.3 : 0.45
+}
+
+/** Edges touching a hub node (degree > HUB_DEGREE) get curved at scale. */
+export function hubEdgeIds(
+  degrees: Map<string, number>,
+  graph: Graph,
+): Set<string> {
+  const hubs = new Set<string>()
+  for (const [id, deg] of degrees) {
+    if (deg > HUB_DEGREE) hubs.add(id)
+  }
+  const ids = new Set<string>()
+  for (const e of graph.edges) {
+    if (hubs.has(e.data.source) || hubs.has(e.data.target)) {
+      ids.add(e.data.id)
+    }
+  }
+  return ids
+}
+
 /** Layout parameters scale with node count so large graphs keep spreading. */
-export function layoutForTier(nodeCount: number, tier: Tier) {
+export function layoutForTier(nodeCount: number, tier: Tier, degrees?: Map<string, number>) {
   const spread = Math.sqrt(nodeCount / 50)
+  const deg = (node: { data: (k: string) => any }) => degrees?.get(node.data('id')) ?? 0
+  const idealEdgeLength = (edge: { data: (k: string) => any, source: () => any, target: () => any }) => {
+    const packetLen = (90 - Math.min(40, Math.log2(1 + (edge.data('packets') ?? 0)) * 10)) * Math.min(spread, 2)
+    const srcDeg = degrees?.get(edge.source().id()) ?? 0
+    const dstDeg = degrees?.get(edge.target().id()) ?? 0
+    return (
+      packetLen *
+      hubEdgeFactor(srcDeg) *
+      hubEdgeFactor(dstDeg)
+    )
+  }
+  const edgeElasticity = (edge: { source: () => any, target: () => any }) => {
+    const srcDeg = degrees?.get(edge.source().id()) ?? 0
+    const dstDeg = degrees?.get(edge.target().id()) ?? 0
+    return elasticityFor(srcDeg > HUB_EDGE_DEGREE || dstDeg > HUB_EDGE_DEGREE)
+  }
   const common = {
     name: 'fcose' as const,
     padding: 30,
-    idealEdgeLength: (edge: { data: (k: string) => number }) =>
-      (90 - Math.min(40, Math.log2(1 + (edge.data('packets') ?? 0)) * 10)) * Math.min(spread, 2),
+    idealEdgeLength,
+    edgeElasticity,
   }
   if (tier === 'detail') {
     return {
@@ -129,8 +194,10 @@ export function layoutForTier(nodeCount: number, tier: Tier) {
       animate: true,
       animationDuration: 400,
       fit: true,
+      gravity: 0.2,
       nodeSeparation: Math.round(120 * Math.min(spread, 1.8)),
-      nodeRepulsion: () => Math.round(9000 * Math.min(spread, 1.8)),
+      nodeRepulsion: (node: { data: (k: string) => any }) =>
+        repulsionFor(deg(node), 9000 * Math.min(spread, 1.8)),
     }
   }
   return {
@@ -139,8 +206,10 @@ export function layoutForTier(nodeCount: number, tier: Tier) {
     animate: false,
     randomize: true,
     fit: true,
+    gravity: 0.12,
     nodeSeparation: Math.round(120 * Math.min(spread, 2)),
-    nodeRepulsion: () => Math.round(9000 * Math.min(spread, 2)),
+    nodeRepulsion: (node: { data: (k: string) => any }) =>
+      repulsionFor(deg(node), 9000 * Math.min(spread, 2)),
   }
 }
 
@@ -162,5 +231,12 @@ export function viewportForTier(tier: Tier) {
   }
 }
 
-/** Straight edges are ~2x faster to draw than bezier curves. */
-export const edgeCurveForTier = (tier: Tier) => (tier === 'scale' ? 'straight' : 'bezier')
+/**
+ * Edge curve at scale: hub edges fan out as beziers so the many connections
+ * around high-degree nodes don't overlap into one wedge; bulk edges stay
+ * cheap straight lines. Balanced/detail keep bezier everywhere.
+ */
+export function edgeCurveForTier(tier: Tier, hubEdges?: Set<string>) {
+  if (tier !== 'scale') return 'bezier' as const
+  return (edge: { id: () => string }) => (hubEdges?.has(edge.id()) ? 'bezier' : 'straight') as 'bezier' | 'straight'
+}

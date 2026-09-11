@@ -34,12 +34,15 @@ test('small graph renders all edge types with dynamic filter toggles', async ({ 
 })
 
 test('large graph switches to scale tier and stays interactive', async ({ page }) => {
+  // measure graph build+layout time (perf guard: draft layout on ~950 elements)
+  const t0 = Date.now()
   await page.goto('/graph')
 
   await page.getByLabel('Select capture').selectOption({ label: 'large_graph.pcap' })
 
   // scale tier badge appears in the header
   await expect(page.getByText('scale', { exact: true })).toBeVisible({ timeout: 30_000 })
+  const buildMs = Date.now() - t0
 
   // leaf-only domains are auto-collapsed with an override button
   const showLeaves = page.getByText(/leaf domains hidden — show/)
@@ -48,11 +51,18 @@ test('large graph switches to scale tier and stays interactive', async ({ page }
   // graph canvas renders and is interactive (zoom via mouse wheel)
   const canvas = page.locator('canvas').first()
   await expect(canvas).toBeVisible({ timeout: 30_000 })
+  console.log(`[perf] large graph render: ${buildMs}ms`)
+
+  // labels hidden by default at scale except alert hosts (hover reveals)
+  await page.locator('canvas').first().hover({ position: { x: 400, y: 300 } })
+  await expect(canvas).toBeVisible()
 
   // override: show leaf domains → the button disappears, element count grows
   const countBefore = parseInt(((await page.getByText(/\d+ shown/).textContent()) ?? '0').replace(/\D/g, ''))
   await showLeaves.click()
   await expect(page.getByText(/leaf domains hidden — show/)).toBeHidden({ timeout: 15_000 })
+  const t1 = Date.now()
   const countAfter = parseInt(((await page.getByText(/\d+ shown/).textContent()) ?? '0').replace(/\D/g, ''))
+  console.log(`[perf] leaf-override re-layout (75 new nodes): ${Date.now() - t1}ms`)
   expect(countAfter).toBeGreaterThan(countBefore)
 })
