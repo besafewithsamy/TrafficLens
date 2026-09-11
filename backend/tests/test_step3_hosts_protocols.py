@@ -205,7 +205,6 @@ def test_capture_summary_includes_step3(client):
 
 def test_job_result_counts(client):
     capture_id = _analyze(client, "normal_traffic.pcap")
-    capture = client.get(f"/api/captures/{capture_id}").json()
     # find the job for this capture
     jobs = client.get("/api/jobs").json()
     job = next(j for j in jobs if j["capture_id"] == capture_id and j["status"] == "completed")

@@ -29,11 +29,11 @@ def _is_private_v6(ip: str) -> bool:
     if first.startswith(("fc", "fd")) and len(first) <= 4:
         return True
     # fe80::/10 — link-local
-    if first.startswith("fe8") or first.startswith("fe9") or first.startswith("fea") or first.startswith("feb"):
-        return True
-    if low.startswith("fe80:") or low == "fe80::":
-        return True
-    return False
+    return (
+        first.startswith(("fe8", "fe9", "fea", "feb"))
+        or low.startswith("fe80:")
+        or low == "fe80::"
+    )
 
 
 def is_private_ip(ip: str | None) -> bool:

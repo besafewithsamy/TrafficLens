@@ -14,8 +14,9 @@ import random
 import sys
 from pathlib import Path
 
-from scapy.all import ARP, IP, IPv6, Ether, TCP, UDP, wrpcap
-from scapy.layers.dhcp import BOOTP, DHCP as ScapyDHCP
+from scapy.all import ARP, IP, TCP, UDP, Ether, IPv6, wrpcap
+from scapy.layers.dhcp import BOOTP
+from scapy.layers.dhcp import DHCP as ScapyDHCP
 from scapy.layers.dns import DNS, DNSQR, DNSRR
 
 BASE_TS = 1717252200.0
@@ -43,7 +44,7 @@ MAC_REMOTE = "aa:bb:cc:dd:ee:02"
 MAC_ATTACKER = "aa:bb:cc:dd:ee:99"  # ARP spoofer's NIC
 
 
-def _eth(src_ip: str) -> "Ether":
+def _eth(src_ip: str) -> Ether:
     """Ether header with deterministic MACs (local nets get MAC_LOCAL, others MAC_REMOTE)."""
     mac = MAC_LOCAL if src_ip.startswith("192.168.") else MAC_REMOTE
     return Ether(src=mac, dst=MAC_REMOTE if mac == MAC_LOCAL else MAC_LOCAL)
@@ -52,55 +53,55 @@ def _eth(src_ip: str) -> "Ether":
 _ip_id_counter = iter(range(1, 65535))
 
 
-def _ip(src: str, dst: str) -> "IP":
+def _ip(src: str, dst: str) -> IP:
     return IP(src=src, dst=dst, id=next(_ip_id_counter))
 
 
-def dns_query(ts: float, src: str, dst: str, name: str, txid: int) -> "Ether":
+def dns_query(ts: float, src: str, dst: str, name: str, txid: int) -> Ether:
     return _eth(src) / _ip(src, dst) / UDP(sport=33333, dport=53) / DNS(
         id=txid, qr=0, qd=DNSQR(qname=name)
     )
 
 
-def dns_response(ts: float, src: str, dst: str, name: str, txid: int, rcode: int = 0) -> "Ether":
+def dns_response(ts: float, src: str, dst: str, name: str, txid: int, rcode: int = 0) -> Ether:
     return _eth(src) / _ip(src, dst) / UDP(sport=53, dport=33333) / DNS(
         id=txid, qr=1, rd=1, ra=1, rcode=rcode, qd=DNSQR(qname=name),
         an=DNSRR(rrname=name, ttl=60, rdata="1.2.3.4") if rcode == 0 else None,
     )
 
 
-def tcp_syn(ts: float, src: str, dst: str, sport: int, dport: int, seq: int = 1000) -> "Ether":
+def tcp_syn(ts: float, src: str, dst: str, sport: int, dport: int, seq: int = 1000) -> Ether:
     pkt = _eth(src) / _ip(src, dst) / TCP(sport=sport, dport=dport, flags="S", seq=seq)
     pkt.time = ts
     return pkt
 
 
-def tcp_synack(ts: float, src: str, dst: str, sport: int, dport: int, seq: int = 2000, ack: int = 1001) -> "Ether":
+def tcp_synack(ts: float, src: str, dst: str, sport: int, dport: int, seq: int = 2000, ack: int = 1001) -> Ether:
     pkt = _eth(src) / _ip(src, dst) / TCP(sport=sport, dport=dport, flags="SA", seq=seq, ack=ack)
     pkt.time = ts
     return pkt
 
 
-def tcp_ack(ts: float, src: str, dst: str, sport: int, dport: int, seq: int, ack: int, payload: bytes = b"") -> "Ether":
+def tcp_ack(ts: float, src: str, dst: str, sport: int, dport: int, seq: int, ack: int, payload: bytes = b"") -> Ether:
     pkt = _eth(src) / _ip(src, dst) / TCP(sport=sport, dport=dport, flags="PA", seq=seq, ack=ack) / payload
     pkt.time = ts
     return pkt
 
 
-def tcp_rst(ts: float, src: str, dst: str, sport: int, dport: int) -> "Ether":
+def tcp_rst(ts: float, src: str, dst: str, sport: int, dport: int) -> Ether:
     pkt = _eth(src) / _ip(src, dst) / TCP(sport=sport, dport=dport, flags="R", seq=3000)
     pkt.time = ts
     return pkt
 
 
-def http_req(ts: float, src: str, dst: str, sport: int, host: str, path: str = "/", ua: str = "Mozilla/5.0 (X11; Linux x86_64)", seq: int = 1000) -> "Ether":
+def http_req(ts: float, src: str, dst: str, sport: int, host: str, path: str = "/", ua: str = "Mozilla/5.0 (X11; Linux x86_64)", seq: int = 1000) -> Ether:
     payload = f"GET {path} HTTP/1.1\r\nHost: {host}\r\nUser-Agent: {ua}\r\nAccept: */*\r\n\r\n".encode()
     pkt = _eth(src) / _ip(src, dst) / TCP(sport=sport, dport=80, flags="PA", seq=seq) / payload
     pkt.time = ts
     return pkt
 
 
-def http_resp(ts: float, src: str, dst: str, sport: int, status: int = 200, seq: int = 2000, body: bytes = b"<html>ok</html>") -> "Ether":
+def http_resp(ts: float, src: str, dst: str, sport: int, status: int = 200, seq: int = 2000, body: bytes = b"<html>ok</html>") -> Ether:
     payload = f"HTTP/1.1 {status} {'OK' if status==200 else 'ERROR'}\r\nServer: nginx/1.24\r\nContent-Length: {len(body)}\r\n\r\n".encode() + body
     pkt = _eth(src) / _ip(src, dst) / TCP(sport=80, dport=sport, flags="PA", seq=seq) / payload
     pkt.time = ts
@@ -118,13 +119,13 @@ def _tls_client_hello(server_name: str) -> bytes:
     return b"\x16\x03\x01" + struct.pack(">H", len(hs)) + hs  # TLS record
 
 
-def tls_clienthello(ts: float, src: str, dst: str, sport: int, dport: int, server_name: str, seq: int = 1000) -> "Ether":
+def tls_clienthello(ts: float, src: str, dst: str, sport: int, dport: int, server_name: str, seq: int = 1000) -> Ether:
     pkt = _eth(src) / _ip(src, dst) / TCP(sport=sport, dport=dport, flags="PA", seq=seq) / _tls_client_hello(server_name)
     pkt.time = ts
     return pkt
 
 
-def tls_server_hello(ts: float, src: str, dst: str, sport: int, dport: int, seq: int = 2000) -> "Ether":
+def tls_server_hello(ts: float, src: str, dst: str, sport: int, dport: int, seq: int = 2000) -> Ether:
     pkt = _eth(src) / _ip(src, dst) / TCP(sport=dport, dport=sport, flags="PA", seq=seq) / b"\x16\x03\x03\x00\x02\x02\x00"
     pkt.time = ts
     return pkt
@@ -139,10 +140,9 @@ def _set_times(packets, start_ts: float, interval: float) -> list:
 def scenario_normal_traffic() -> list:
     """Benign browsing: DNS + plain HTTP + HTTPS/TLS to a handful of common domains."""
     pkts = []
-    ws, dns_srv, ext, cdn = HOSTS["workstation"], HOSTS["dns_server"], HOSTS["ext_web"], HOSTS["cdn"]
+    ws, dns_srv, ext = HOSTS["workstation"], HOSTS["dns_server"], HOSTS["ext_web"]
     for i, domain in enumerate(["example.com", "github.com", "wikipedia.org"]):
         ts = BASE_TS + i * 20
-        sport = 51000 + i
         dns_sport = 33400 + i
 
         pkt_q = _eth(ws) / _ip(ws, dns_srv) / UDP(sport=dns_sport, dport=53) / DNS(id=1000 + i, qr=0, qd=DNSQR(qname=domain))
@@ -178,7 +178,7 @@ def scenario_dns_tunneling() -> list:
     ws, dns_srv = HOSTS["workstation"], HOSTS["dns_server"]
     rng = random.Random(42)
     for i in range(64):
-        sport = 33400 + (i % 8)  
+        sport = 33400 + (i % 8)
         label = "".join(rng.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=40))
         name = f"{label}.tunnel.example.net"
         pkt_q = _eth(ws) / _ip(ws, dns_srv) / UDP(sport=sport, dport=53) / DNS(id=2000 + i, qr=0, qd=DNSQR(qname=name))
@@ -265,7 +265,7 @@ def scenario_lateral_movement() -> list:
     attacker = HOSTS["workstation"]
     targets = [HOSTS["web_server"], HOSTS["file_server"], HOSTS["dc_server"], HOSTS["hr_host"], HOSTS["it_host"]]
     ports = [22, 445, 3389, 22, 5985]
-    for i, (target, dport) in enumerate(zip(targets, ports)):
+    for i, (target, dport) in enumerate(zip(targets, ports, strict=False)):
         ts = BASE_TS + i * 30
         sport = 46000 + i
         pkts.append(tcp_syn(ts, attacker, target, sport, dport, seq=9000 + i))
@@ -319,14 +319,12 @@ def scenario_dga_domains() -> list:
     # 5 real domains first (baseline traffic, all readable)
     for i, domain in enumerate(["example.com", "wikipedia.org", "github.com", "cloudflare.com", "debian.org"]):
         ts = BASE_TS + i
-        sport = 33600 + i
         pkts.append(dns_query(ts, ws, dns_srv, domain, 4000 + i))
         pkts.append(dns_response(ts + 0.02, dns_srv, ws, domain, 4000 + i))
     # 20 DGA lookups: consonant-heavy random labels, most NXDOMAIN
     tld = ["com", "net", "xyz", "top", "info"]
     for i in range(20):
         ts = BASE_TS + 10 + i * 2
-        sport = 33700 + i
         label = "".join(rng.choices("bcdfghjklmnpqrstvwxz", k=12)) + "".join(rng.choices("aeiou", k=1)) + "zxq"
         name = f"{label}.{tld[i % len(tld)]}"
         pkts.append(dns_query(ts, ws, dns_srv, name, 4100 + i))
@@ -360,7 +358,7 @@ def scenario_ipv6_traffic() -> list:
     resp.time = BASE_TS + 0.12
     pkts += [req, resp]
     # v6 ICMPv6 echo request + reply
-    from scapy.layers.inet6 import ICMPv6EchoRequest, ICMPv6EchoReply
+    from scapy.layers.inet6 import ICMPv6EchoReply, ICMPv6EchoRequest
     e1 = Ether(src=mac, dst=MAC_REMOTE) / IPv6(src=ws, dst=ext) / ICMPv6EchoRequest()
     e1.time = BASE_TS + 1
     e2 = Ether(src=MAC_REMOTE, dst=mac) / IPv6(src=ext, dst=ws) / ICMPv6EchoReply()
@@ -423,7 +421,6 @@ def scenario_dhcp_lease() -> list:
     """DHCP DORA: DISCOVER → OFFER → REQUEST → ACK with hostname option."""
     pkts = []
     client, server = HOSTS["workstation"], HOSTS["dns_server"]
-    mac = MAC_LOCAL
 
     def dhcp(ts: float, src: str, dst: str, sport: int, dport: int, msg_type: int, yiaddr: str = "0.0.0.0", hostname: bytes | None = None):
         opts = [("message-type", msg_type), "end"]

@@ -6,11 +6,10 @@ top talkers, protocol distribution, and engineering-grade anomaly flags
 """
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import Counter
 from typing import Any
 
 from app.core.models import ParsedCapture
-from app.services.flow_builder import is_private_ip
 
 BYTES_PER_SEC_WARN = 1_000_000  # 1 MB/s
 DNS_LATENCY_WARN = 0.5  # 500 ms
@@ -39,7 +38,6 @@ def compute_engineer_metrics(
     ts_bandwidth: list[dict] = []
     counts = [0] * bucket_count
     byte_counts = [0] * bucket_count
-    retrans_bucket = [0] * bucket_count
     for p in packets:
         idx = min(int((p.timestamp - t0) / bucket_len), bucket_count - 1)
         counts[idx] += 1

@@ -140,10 +140,10 @@ class LiveCaptureManager:
             return self.status()
 
     def _auto_stop(self) -> None:
-        try:
+        import contextlib
+
+        with contextlib.suppress(Exception):  # a concurrent manual stop already finished us
             self.stop()
-        except Exception:
-            pass  # a concurrent manual stop already finished us
 
     def stop(self) -> dict:
         """Stop recording, persist the PCAP, and kick off analysis."""

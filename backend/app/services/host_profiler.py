@@ -6,7 +6,7 @@ Profile shape (Module H):
 """
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import Counter
 
 from app.core.models import ParsedCapture
 from app.services.flow_builder import is_private_ip
@@ -99,7 +99,7 @@ class _HostAccumulator:
     @property
     def services(self) -> list[dict]:
         by_port: Counter = Counter()
-        for (src_ip, port), packets in self._service_ports.items():
+        for (_src_ip, port), packets in self._service_ports.items():
             by_port[port] += packets
         return [
             {
@@ -129,7 +129,6 @@ class _HostAccumulator:
 
     @property
     def behavior_summary(self) -> dict:
-        total = self.packets_sent + self.packets_received
         return {
             "dominant_protocol": self.protocols.most_common(1)[0][0] if self.protocols else None,
             "protocol_distribution": dict(self.protocols.most_common()),

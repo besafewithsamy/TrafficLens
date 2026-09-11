@@ -1,7 +1,6 @@
 """TSharkParser — optional enhanced parser (direct tshark integration, no PyShark)."""
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
 from typing import Any

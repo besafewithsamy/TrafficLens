@@ -1,4 +1,8 @@
-![Logo](assets/Logo.png)
+<p align="center">
+  <img src="assets/Logo.png" alt="PacketSleuth" width="480" />
+</p>
+
+[![CI](https://github.com/besafewithsamy/TrafficLens/actions/workflows/ci.yml/badge.svg)](https://github.com/besafewithsamy/TrafficLens/actions/workflows/ci.yml)
 
 **Network traffic analysis and investigation, built around understanding what happened.**
 
@@ -96,7 +100,15 @@ PacketSleuth is not limited to security investigations. It also provides network
 
 ## Quick Start
 
-### Requirements
+### One command with Docker (no prerequisites except Docker)
+
+```bash
+docker compose up
+```
+
+Then open [http://localhost:8000](http://localhost:8000) — the full app (frontend + API) runs in a single container, with analysis data persisted in a named volume.
+
+### Requirements (manual setup)
 
 * Python 3.12+
 * Node.js 18+
@@ -249,12 +261,28 @@ PacketSleuth/
 
 ## Testing
 
-Run the backend test suite with:
+The project is covered by three test layers, all wired into GitHub Actions CI:
+
+**Backend** — 113 integration tests (pytest) over the full analysis pipeline:
 
 ```bash
 cd backend
 source .venv/bin/activate
 pytest tests/ -q
+```
+
+**Frontend unit tests** (vitest):
+
+```bash
+cd frontend
+npm test
+```
+
+**End-to-end smoke** (Playwright) — boots both servers and drives the real UI: upload → analyze → alerts. Self-contained:
+
+```bash
+cd frontend
+npx playwright test
 ```
 
 PacketSleuth also uses deterministic synthetic PCAPs to make analysis scenarios reproducible during development and testing.

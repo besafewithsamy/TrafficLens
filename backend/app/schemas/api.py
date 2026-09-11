@@ -68,7 +68,7 @@ class Page(BaseModel):
     limit: int
 
     @classmethod
-    def of(cls, items: list, total: int, offset: int, limit: int) -> "Page":
+    def of(cls, items: list, total: int, offset: int, limit: int) -> Page:
         return cls(items=items, total=total, offset=offset, limit=limit)
 
 

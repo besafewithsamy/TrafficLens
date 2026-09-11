@@ -18,16 +18,16 @@ from app.repositories import (
     CaptureRepository,
     DNSRepository,
     FlowRepository,
-    HTTPRepository,
     HostRepository,
+    HTTPRepository,
     JobRepository,
     PacketRepository,
-    TLSRepository,
     TimelineRepository,
+    TLSRepository,
 )
 from app.services.flow_builder import FlowBuilder
 from app.services.host_profiler import HostProfiler
-from app.services.protocol_extractor import extract_dns, extract_http, extract_tls, protocol_statistics
+from app.services.protocol_extractor import extract_dns, extract_http, extract_tls
 from app.services.suspicion_engine import SuspicionEngine, correlate_alerts
 from app.services.timeline_graph import build_timeline
 
@@ -126,7 +126,7 @@ class AnalysisService:
             self.alerts.delete_for_capture(capture.id)
             if alert_dicts:
                 alert_models = self.alerts.create_many(capture.id, alert_dicts)
-                alert_id_map = {id(a): m.id for a, m in zip(alert_dicts, alert_models)}
+                alert_id_map = {id(a): m.id for a, m in zip(alert_dicts, alert_models, strict=False)}
             else:
                 alert_id_map = {}
 

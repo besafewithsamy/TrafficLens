@@ -1,18 +1,17 @@
 """Timeline + Graph endpoints (Module C/E/F)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.common import capture_or_404
 from app.core.database import get_db
-from app.db.orm import CaptureModel
 from app.repositories import (
     DNSRepository,
     FlowRepository,
     HostRepository,
-    TLSRepository,
     TimelineRepository,
+    TLSRepository,
 )
 from app.schemas.api import GraphOut, Page, TimelineEventOut
 from app.services.timeline_graph import build_graph

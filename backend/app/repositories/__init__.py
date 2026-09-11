@@ -12,11 +12,11 @@ from app.db.orm import (
     CaseModel,
     DNSTransactionModel,
     FlowModel,
-    HTTPTransactionModel,
     HostModel,
+    HTTPTransactionModel,
     PacketModel,
-    TLSSessionModel,
     TimelineEventModel,
+    TLSSessionModel,
     utcnow,
 )
 
@@ -374,11 +374,11 @@ class TimelineRepository:
         if host:
             host_pat = f"%{host}%"
             stmt = stmt.where(
-                (
+
                     TimelineEventModel.source_ip.ilike(host_pat)
                     | TimelineEventModel.destination_ip.ilike(host_pat)
                     | TimelineEventModel.domain.ilike(host_pat)
-                )
+
             )
         if protocol:
             stmt = stmt.where(TimelineEventModel.protocol.ilike(f"%{protocol}%"))

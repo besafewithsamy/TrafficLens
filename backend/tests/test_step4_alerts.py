@@ -1,7 +1,6 @@
 """Step 4 tests: suspicion engine — every scenario must trigger its expected alerts."""
 from __future__ import annotations
 
-from tests.conftest import TESTDATA
 from tests.test_step1 import _analyze_and_wait, _upload
 
 

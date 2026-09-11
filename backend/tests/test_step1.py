@@ -110,13 +110,14 @@ def test_analysis_failure_handled(client, monkeypatch):
     """A corrupt file must mark the capture failed, not crash the app."""
     capture_id = _upload(client, "normal_traffic.pcap")
     # overwrite stored bytes with garbage
-    from app.db.orm import CaptureModel
     from app.core.database import SessionLocal
+    from app.db.orm import CaptureModel
 
     db = SessionLocal()
     capture = db.get(CaptureModel, capture_id)
     Path(capture.stored_path).write_bytes(b"this is not a pcap file")
-    db.commit(); db.close()
+    db.commit()
+    db.close()
 
     resp = client.post(f"/api/captures/{capture_id}/analyze")
     assert resp.status_code == 202

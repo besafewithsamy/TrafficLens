@@ -9,8 +9,6 @@ hosts, domains, services; DNS / TCP / TLS / HTTP edges.
 """
 from __future__ import annotations
 
-from collections import Counter, defaultdict
-
 from app.core.models import ParsedCapture
 from app.services.flow_builder import is_private_ip
 

@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.parsers import registry, resolve_parser
 from app.repositories import CaptureRepository, JobRepository
-from app.schemas.api import AnalyzeRequest, CaptureOut, JobOut, MessageOut
+from app.schemas.api import AnalyzeRequest, CaptureOut, JobOut
 from app.services.jobs import job_manager
 
 router = APIRouter(prefix="/api/captures", tags=["captures"])
@@ -94,7 +94,7 @@ def analyze_capture(
         if requested not in (None, "", "auto"):
             resolve_parser(requested)
     except Exception as exc:
-        raise HTTPException(400, str(exc))
+        raise HTTPException(400, str(exc)) from exc
 
     stored_path = get_stored_path(db, capture_id)
     if stored_path is None or not stored_path.exists():

@@ -5,19 +5,19 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.db.orm import CaptureModel
+from app.db.orm import CaptureModel, CaseModel, TimelineEventModel
 from app.repositories import (
     AlertRepository,
-    CaseRepository,
     CaptureRepository,
+    CaseRepository,
     TimelineRepository,
 )
 from app.schemas.api import (
-    CaseCreate,
+    CaptureOut,
     CaseCaptureBody,
+    CaseCreate,
     CaseDetailOut,
     CaseOut,
-    CaptureOut,
     TimelineEventOut,
 )
 
@@ -36,11 +36,14 @@ def _case_or_404(db: Session, case_id: str):
     return case
 
 
-def _case_detail(db: Session, case) -> CaseDetailOut:
-    captures = [db.get(CaptureModel, cid) for cid in (case.capture_ids or [])]
-    captures = [c for c in captures if c is not None]
+def _case_detail(db: Session, case: CaseModel) -> CaseDetailOut:
+    captures: list[CaptureModel] = []
+    for cid in case.capture_ids or []:
+        c = db.get(CaptureModel, cid)
+        if c is not None:
+            captures.append(c)
 
-    stats = {
+    stats: dict = {
         "capture_count": len(captures),
         "total_packets": sum(c.packet_count for c in captures),
         "total_alerts": 0,
@@ -49,7 +52,7 @@ def _case_detail(db: Session, case) -> CaseDetailOut:
         "first_event_ts": None,
         "last_event_ts": None,
     }
-    events: list[TimelineEventOut] = []
+    events: list[TimelineEventModel] = []
     for c in captures:
         alerts, total = AlertRepository(db).page_for_capture(c.id, limit=500)
         stats["total_alerts"] += total
@@ -61,7 +64,7 @@ def _case_detail(db: Session, case) -> CaseDetailOut:
 
     # dedupe incidents across captures (same source + rule set)
     seen: set[tuple] = set()
-    deduped = []
+    deduped: list = []
     for inc in stats["incidents"]:
         key = (inc.get("source_ip"), tuple(inc.get("rule_names", [])))
         if key not in seen:
@@ -124,7 +127,7 @@ def close_case(case_id: str, db: Session = Depends(get_db)):
 
 @router.delete("/{case_id}", response_model=dict)
 def delete_case(case_id: str, db: Session = Depends(get_db)):
-    case = _case_or_404(db, case_id)
+    _case_or_404(db, case_id)
     CaseRepository(db).delete(case_id)
     return {"detail": "deleted"}
 

@@ -53,3 +53,32 @@ app.include_router(cases.router)
 @app.get("/api/health")
 def health():
     return {"status": "ok", "app": settings.app_name}
+
+
+# ---- SPA static serving (single-container deployments) ----
+# When the frontend build is present (Docker image / manual copy to backend/dist),
+# serve it with a history-mode fallback so deep links (/flows?...) reach index.html.
+# In local dev the folder doesn't exist and Vite serves the frontend instead.
+
+
+def _mount_spa() -> None:
+    from pathlib import Path
+
+    from fastapi.staticfiles import StaticFiles
+    from starlette.responses import FileResponse
+
+    spa_dir = Path(__file__).resolve().parent / "dist"
+    if not (spa_dir / "index.html").exists():
+        return  # frontend not built into the image — API-only mode
+
+    app.mount("/assets", StaticFiles(directory=spa_dir / "assets"), name="spa-assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa_fallback(full_path: str):
+        candidate = spa_dir / full_path
+        if full_path and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(spa_dir / "index.html")
+
+
+_mount_spa()

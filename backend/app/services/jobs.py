@@ -10,8 +10,6 @@ import threading
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
-from app.db.orm import AnalysisJobModel, CaptureModel
-from app.repositories import CaptureRepository, JobRepository
 from app.services.analysis import AnalysisService
 
 

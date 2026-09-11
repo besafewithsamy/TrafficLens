@@ -180,9 +180,9 @@ class ScapyParser(PacketParser):
             src, dst = ip_layer.src, ip_layer.dst
             transport = None
             sport = dport = None
-            flags: list[str] = []
+            flags = []
             app_protocol = None
-            metadata: dict[str, Any] = {}
+            metadata = {}
 
             if Ether in pkt:
                 metadata["eth.src"] = pkt[Ether].src
@@ -364,7 +364,8 @@ class ScapyParser(PacketParser):
         # ---- DHCP: message type + hostname option via BOOTP layer ----
         if pkt.haslayer("BOOTP"):
             try:
-                from scapy.layers.dhcp import BOOTP, DHCP as ScapyDHCP
+                from scapy.layers.dhcp import BOOTP
+                from scapy.layers.dhcp import DHCP as ScapyDHCP
 
                 bootp = pkt[BOOTP]
                 if ScapyDHCP in pkt:
@@ -406,11 +407,9 @@ class ScapyParser(PacketParser):
                 etype = int.from_bytes(data[i : i + 2], "big")
                 elen = int.from_bytes(data[i + 2 : i + 4], "big")
                 body = data[i + 4 : i + 4 + elen]
-                if etype == 0:  # server_name extension
-                    # list(2) + type(1) + len(2)
-                    if len(body) >= 5 and body[2] == 0:
-                        nlen = int.from_bytes(body[3:5], "big")
-                        return body[5 : 5 + nlen].decode("utf-8", "replace")
+                if etype == 0 and len(body) >= 5 and body[2] == 0:  # server_name extension
+                    nlen = int.from_bytes(body[3:5], "big")
+                    return body[5 : 5 + nlen].decode("utf-8", "replace")
                 i += 4 + elen
         except Exception:
             return None

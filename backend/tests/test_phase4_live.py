@@ -88,7 +88,7 @@ def test_stop_without_running(monkeypatch):
 
 def test_stop_persists_capture_and_submits_analysis(monkeypatch, app_env):
     """Stopping must write a pcap, register a live capture, and start a job."""
-    from scapy.all import IP, Ether, TCP
+    from scapy.all import IP, TCP, Ether
 
     sniffer = FakeSniffer("lo", None)
     sniffer.results = [
@@ -211,7 +211,7 @@ def test_real_live_capture_lo():
     except PermissionError:
         pytest.skip("live sniffing requires root/CAP_NET_RAW")
 
-    from scapy.all import IP, ICMP, Ether, sr1
+    from scapy.all import ICMP, IP, sr1
 
     mgr = LiveCaptureManager()
     if "lo" not in mgr.interfaces():

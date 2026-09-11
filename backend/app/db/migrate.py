@@ -9,10 +9,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from sqlalchemy import inspect
-
-from app.db.orm import AlertModel, Base
-
+from app.db.orm import AlertModel
 
 # column -> DDL for columns added after the first release
 MIGRATIONS: dict[str, dict[str, str]] = {

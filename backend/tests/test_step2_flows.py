@@ -1,9 +1,6 @@
 """Step 2 tests: flow reconstruction — aggregation, TCP states, evidence drill-down."""
 from __future__ import annotations
 
-import time
-
-from tests.conftest import TESTDATA
 from tests.test_step1 import _analyze_and_wait, _upload
 
 

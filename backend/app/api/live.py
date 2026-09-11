@@ -35,7 +35,7 @@ def start_live(body: LiveStartRequest):
     except LiveCaptureError as exc:
         # running/permissions/bad interface — client-actionable messages
         code = 409 if "already running" in str(exc) else 400
-        raise HTTPException(code, str(exc))
+        raise HTTPException(code, str(exc)) from exc
 
 
 @router.get("/status")
@@ -50,4 +50,4 @@ def stop_live():
     try:
         return live_manager.stop()
     except LiveCaptureError as exc:
-        raise HTTPException(409, str(exc))
+        raise HTTPException(409, str(exc)) from exc

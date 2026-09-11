@@ -25,3 +25,8 @@ test-data/synthetic/*.pcapng
 # IDE
 .vscode/
 .idea/
+
+# Playwright
+frontend/test-results/
+frontend/playwright-report/
+frontend/.playwright/

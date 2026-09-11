@@ -1,0 +1,33 @@
+[project]
+name = "packetsleuth-backend"
+version = "1.0.0"
+description = "Network traffic analysis and investigation platform — backend"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+include = ["app/**/*.py", "tests/**/*.py", "../scripts/**/*.py"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort (import ordering)
+    "B",    # bugbear (likely bugs)
+    "UP",   # pyupgrade (modern syntax)
+    "SIM",  # simplify
+]
+ignore = [
+    "E501",  # line length handled by formatter where possible; long strings allowed
+    "B008",  # FastAPI uses call-in-default (Depends/File/Query)
+    "UP035", # typing imports kept for 3.12 compat patterns
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]  # assert False patterns in tests
+"../scripts/*" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

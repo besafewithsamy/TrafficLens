@@ -1,0 +1,17 @@
+# keep the build context lean
+.git
+.github
+**/__pycache__
+**/.venv
+**/venv
+**/node_modules
+backend/data
+test-data
+*.db
+*.db-wal
+*.db-shm
+scripts
+docs
+README.md
+.env
+.env.*

@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend — lint, types, tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt ruff mypy
+
+      - name: Generate synthetic test PCAPs
+        run: python ../scripts/generate_test_pcaps.py --out ../test-data/synthetic
+
+      - name: Ruff (lint)
+        run: ruff check app/ tests/ ../scripts/
+
+      - name: Mypy (type check)
+        run: mypy app/
+
+      - name: Pytest (113 tests)
+        run: python -m pytest tests/ -q
+
+  frontend:
+    name: Frontend — lint, typecheck+build, unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Oxlint
+        run: npm run lint
+
+      - name: Typecheck + build
+        run: npm run build
+
+      - name: Vitest (unit)
+        run: npm test
+
+  docker:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: packetsleuth:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

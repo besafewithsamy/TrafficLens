@@ -154,7 +154,7 @@ def rule_beaconing(flows: list[dict]) -> list[RuleResult]:
         if len(group) < 5:
             continue
         times = sorted(f["first_seen"] for f in group)
-        intervals = [b - a for a, b in zip(times, times[1:])]
+        intervals = [b - a for a, b in zip(times, times[1:], strict=False)]
         if not intervals:
             continue
         mean = sum(intervals) / len(intervals)
@@ -216,7 +216,7 @@ def rule_dns_tunneling(parsed: ParsedCapture, dns_txns: list[dict]) -> list[Rule
         name = t["query_name"].rstrip(".")
         by_client[client]["queries"].append(t)
         labels = name.split(".")
-        longest = max(len(l) for l in labels)
+        longest = max(len(label) for label in labels)
         by_client[client]["max_label"] = max(by_client[client]["max_label"], longest)
         # count unique subdomains under the same parent domain
         if len(labels) >= 3:
@@ -827,7 +827,7 @@ def rule_low_slow_beaconing(flows: list[dict]) -> list[RuleResult]:
         if len(group) < 3:  # fewer than beaconing's 5 — low-and-slow needs fewer
             continue
         times = sorted(f["first_seen"] for f in group)
-        intervals = [b - a for a, b in zip(times, times[1:])]
+        intervals = [b - a for a, b in zip(times, times[1:], strict=False)]
         mean = sum(intervals) / len(intervals)
         if mean < 60:  # rule_beaconing territory (< 60s); here we want long intervals
             continue
