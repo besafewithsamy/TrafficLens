@@ -78,7 +78,7 @@ export function CapturePage() {
       {/* Upload zone */}
       <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-8">
         <div className="flex flex-col items-center gap-3">
-          <div className="text-3xl text-slate-600">⇪</div>
+          <div className="text-3xl font-light text-slate-600">PCAP</div>
           <p className="text-sm text-slate-400">
             Drop or select a capture file (<span className="text-slate-300">.pcap</span>,{' '}
             <span className="text-slate-300">.pcapng</span>)
@@ -152,7 +152,7 @@ export function CapturePage() {
                 onClick={() => analyze.mutate(current.id)}
                 className="rounded-lg bg-emerald-500/10 px-4 py-1.5 text-sm font-medium text-emerald-300 ring-1 ring-emerald-500/30 hover:bg-emerald-500/20 disabled:opacity-50"
               >
-                {analyze.isPending ? 'Starting…' : '▶ Analyze'}
+                {analyze.isPending ? 'Starting…' : 'Analyze'}
               </button>
             )}
             {(current.status === 'analyzing' || current.status === 'queued') && (
@@ -337,7 +337,7 @@ function LiveCapturePanel() {
   return (
     <div className="mt-6 rounded-xl border border-sky-500/20 bg-sky-500/5 p-5">
       <div className="mb-3 flex items-center gap-3">
-        <span className="text-lg text-sky-400">◉</span>
+        <span className="h-2 w-2 rounded-full bg-sky-400"></span>
         <div className="flex-1">
           <div className="text-sm font-medium text-slate-200">Live capture</div>
           <div className="text-xs text-slate-500">
@@ -391,7 +391,7 @@ function LiveCapturePanel() {
             onClick={() => start.mutate()}
             className="rounded-lg bg-sky-500/10 px-4 py-1.5 text-sm font-medium text-sky-300 ring-1 ring-sky-500/30 transition hover:bg-sky-500/20 disabled:opacity-50"
           >
-            {start.isPending ? 'Starting…' : '◉ Start live capture'}
+            {start.isPending ? 'Starting…' : 'Start live capture'}
           </button>
           {live?.status === 'stopped' && (
             <span className="text-xs text-emerald-400">
@@ -411,7 +411,7 @@ function LiveCapturePanel() {
             onClick={() => stop.mutate()}
             className="rounded-lg bg-red-500/10 px-4 py-1.5 text-sm font-medium text-red-300 ring-1 ring-red-500/30 transition hover:bg-red-500/20 disabled:opacity-50"
           >
-            {stop.isPending ? 'Stopping…' : '■ Stop & analyze'}
+            {stop.isPending ? 'Stopping…' : 'Stop & analyze'}
           </button>
         </div>
       )}

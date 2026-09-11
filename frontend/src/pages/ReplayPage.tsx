@@ -6,18 +6,6 @@ import { formatTime } from '../components/ui'
 import { useSelectedCapture } from '../hooks/captures'
 import type { TimelineEvent } from '../types/api'
 
-const TYPE_META: Record<string, { icon: string; color: string }> = {
-  dns_query: { icon: '❓', color: 'text-sky-400' },
-  dns_response: { icon: '✉', color: 'text-emerald-400' },
-  tcp_connect: { icon: '⇄', color: 'text-sky-400' },
-  udp_session: { icon: '◦', color: 'text-violet-400' },
-  tcp_reset: { icon: '⊗', color: 'text-red-400' },
-  flow_failed: { icon: '✕', color: 'text-amber-400' },
-  http_request: { icon: '⇅', color: 'text-sky-400' },
-  tls_handshake: { icon: '🔒', color: 'text-violet-400' },
-  alert: { icon: '⚠', color: 'text-red-400' },
-}
-
 const SPEEDS = [0.5, 1, 4, 16, 64]
 
 export function ReplayPage() {
@@ -83,23 +71,23 @@ export function ReplayPage() {
                 if (position >= events.length - 1) setPosition(0)
                 setPlaying(!playing)
               }}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/10 text-lg text-emerald-300 ring-1 ring-emerald-500/30 hover:bg-emerald-500/20"
+              className="flex h-10 items-center justify-center rounded-full bg-emerald-500/10 px-4 text-sm font-medium text-emerald-300 ring-1 ring-emerald-500/30 hover:bg-emerald-500/20"
             >
-              {playing ? '❚❚' : '▶'}
+              {playing ? 'Pause' : 'Play'}
             </button>
             <button
               onClick={() => setPosition((p) => Math.max(0, p - 1))}
-              className="rounded-lg px-2 py-1 text-slate-400 ring-1 ring-slate-700 hover:text-slate-200"
+              className="rounded-lg px-2 py-1 text-xs text-slate-400 ring-1 ring-slate-700 hover:text-slate-200"
               title="previous event"
             >
-              ⏮
+              Prev
             </button>
             <button
               onClick={() => setPosition((p) => Math.min(events.length - 1, p + 1))}
-              className="rounded-lg px-2 py-1 text-slate-400 ring-1 ring-slate-700 hover:text-slate-200"
+              className="rounded-lg px-2 py-1 text-xs text-slate-400 ring-1 ring-slate-700 hover:text-slate-200"
               title="next event"
             >
-              ⏭
+              Next
             </button>
 
             {/* scrubber */}
@@ -148,13 +136,6 @@ export function ReplayPage() {
                   {formatTime(current.timestamp)}
                 </span>
                 <span
-                  className={`text-xl ${
-                    (TYPE_META[current.event_type] ?? { color: 'text-slate-500' }).color
-                  }`}
-                >
-                  {(TYPE_META[current.event_type] ?? { icon: '·' }).icon}
-                </span>
-                <span
                   className={`text-base ${
                     current.severity === 'critical'
                       ? 'text-red-300'
@@ -177,7 +158,6 @@ export function ReplayPage() {
             <div className="space-y-1">
               {past.map((e, i) => {
                 const isCurrent = i === past.length - 1
-                const meta = TYPE_META[e.event_type] ?? { icon: '·', color: 'text-slate-500' }
                 return (
                   <button
                     key={e.id}
@@ -191,7 +171,6 @@ export function ReplayPage() {
                     <span className="w-16 shrink-0 font-mono text-xs text-slate-500">
                       {formatTime(e.timestamp)}
                     </span>
-                    <span className={`w-4 shrink-0 ${meta.color}`}>{meta.icon}</span>
                     <span className="min-w-0 flex-1 truncate text-slate-300">{e.label}</span>
                     {isCurrent && (
                       <span className="shrink-0 text-[10px] uppercase tracking-wider text-emerald-400">
@@ -235,7 +214,7 @@ function ReplayEventModal({ event, onClose }: { event: TimelineEvent; onClose: (
             </div>
           </div>
           <button onClick={onClose} className="text-slate-500 hover:text-slate-300">
-            ✕
+            ×
           </button>
         </div>
         <div className="space-y-4 p-5">

@@ -6,7 +6,7 @@ PCAP / Live Capture
         ↓
   ScapyParser | TSharkParser | <future parsers>
         ↓
-TrafficLens normalized model (ParsedCapture / NormalizedPacket)
+PacketSleuth normalized model (ParsedCapture / NormalizedPacket)
 
 Parser-specific objects (Scapy packets, TShark JSON) NEVER leave this layer.
 """

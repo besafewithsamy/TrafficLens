@@ -292,18 +292,6 @@ function CaseStat({ label, value, tone }: { label: string; value: string | numbe
   )
 }
 
-const TYPE_ICON: Record<string, string> = {
-  dns_query: '❓',
-  dns_response: '✉',
-  tcp_connect: '⇄',
-  udp_session: '◦',
-  tcp_reset: '⊗',
-  flow_failed: '✕',
-  http_request: '⇅',
-  tls_handshake: '🔒',
-  alert: '⚠',
-}
-
 function CaseTimeline({ caseId }: { caseId: string }) {
   const [eventType, setEventType] = useState('')
   const { data: events, isLoading, isError, refetch } = useQuery({
@@ -346,9 +334,6 @@ function CaseTimeline({ caseId }: { caseId: string }) {
             >
               <span className="w-20 shrink-0 font-mono text-xs text-slate-500">
                 {new Date(e.timestamp * 1000).toLocaleTimeString()}
-              </span>
-              <span className="w-4 shrink-0 text-center text-xs">
-                {TYPE_ICON[e.event_type] ?? '·'}
               </span>
               <span className="min-w-0 flex-1 truncate text-xs text-slate-300">{e.label}</span>
               <span className="shrink-0 font-mono text-[10px] text-slate-600">

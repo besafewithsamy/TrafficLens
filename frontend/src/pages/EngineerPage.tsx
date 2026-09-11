@@ -77,7 +77,7 @@ export function EngineerPage() {
         </div>
       ) : isError ? (
         <div className="flex flex-col items-center gap-3 rounded-xl border border-red-500/20 bg-red-500/5 p-12">
-          <div className="text-sm text-red-400">⚠ {String(error)}</div>
+          <div className="text-sm text-red-400">{String(error)}</div>
           <button
             onClick={() => refetch()}
             className="rounded-lg bg-slate-800 px-4 py-1.5 text-xs text-slate-300 ring-1 ring-slate-700 hover:bg-slate-700"

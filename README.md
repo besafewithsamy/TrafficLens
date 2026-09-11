@@ -2,7 +2,7 @@
 
 **Network traffic analysis and investigation, built around understanding what happened.**
 
-TrafficLens turns raw network traffic into a clear picture of network activity. Instead of forcing you to work through thousands of packets to understand an incident, it reconstructs the traffic into flows, hosts, protocols, behaviors, events, and alerts — while keeping the underlying packets available as evidence.
+PacketSleuth turns raw network traffic into a clear picture of network activity. Instead of forcing you to work through thousands of packets to understand an incident, it reconstructs the traffic into flows, hosts, protocols, behaviors, events, and alerts — while keeping the underlying packets available as evidence.
 
 > Here is what happened. Let me show you the network evidence behind it.
 
@@ -15,7 +15,7 @@ Packets → Flows → Hosts → Behaviors → Events → Investigation
 
 ![Dashboard overview](assets/pic1.png)
 
-## What TrafficLens Does
+## What PacketSleuth Does
 
 ### Traffic Investigation
 
@@ -40,7 +40,7 @@ Packets → Flows → Hosts → Behaviors → Events → Investigation
 
 ### Suspicious Activity Detection
 
-TrafficLens uses deterministic and explainable rules rather than relying on black-box machine learning.
+PacketSleuth uses deterministic and explainable rules rather than relying on black-box machine learning.
 
 Current detections include:
 
@@ -65,7 +65,7 @@ Related alerts are also correlated into **incidents** — per-host groups of ale
 
 ### Timeline, Graph & Replay
 
-TrafficLens turns network activity into an investigation timeline that can be filtered by host, protocol, event type, severity, and time.
+PacketSleuth turns network activity into an investigation timeline that can be filtered by host, protocol, event type, severity, and time.
 
 It also provides:
 
@@ -85,7 +85,7 @@ It also provides:
 
 ### Network Engineering
 
-TrafficLens is not limited to security investigations. It also provides network health information including:
+PacketSleuth is not limited to security investigations. It also provides network health information including:
 
 * Bandwidth and packet rates
 * Top talkers
@@ -106,7 +106,7 @@ TrafficLens is not limited to security investigations. It also provides network 
 
 ```bash
 
-cd ~/Projects/TrafficLens/backend
+cd ~/Projects/PacketSleuth/backend
 
 source .venv/bin/activate
 
@@ -128,7 +128,7 @@ Open another terminal:
 
 ```bash
 
-cd ~/Projects/TrafficLens/frontend
+cd ~/Projects/PacketSleuth/frontend
 
 npm run dev
 ```
@@ -139,7 +139,7 @@ Then open:
 
 ## Test Data
 
-TrafficLens includes a deterministic PCAP generator for development and testing.
+PacketSleuth includes a deterministic PCAP generator for development and testing.
 
 From the `backend` directory with the virtual environment activated:
 
@@ -166,7 +166,7 @@ The generator includes scenarios such as:
 
 ## Architecture
 
-TrafficLens separates packet parsing from the analysis engine through a normalized internal model.
+PacketSleuth separates packet parsing from the analysis engine through a normalized internal model.
 
 ```text
 PCAP
@@ -200,7 +200,7 @@ Parser-specific objects do not leave the parser layer. This keeps the analysis e
 ## Project Structure
 
 ```text
-TrafficLens/
+PacketSleuth/
 ├── backend/
 │   ├── app/
 │   │   ├── api/
@@ -257,11 +257,11 @@ source .venv/bin/activate
 pytest tests/ -q
 ```
 
-TrafficLens also uses deterministic synthetic PCAPs to make analysis scenarios reproducible during development and testing.
+PacketSleuth also uses deterministic synthetic PCAPs to make analysis scenarios reproducible during development and testing.
 
 ## Live Capture
 
-TrafficLens can also record traffic directly from a network interface — no upload needed. On the **Capture** page:
+PacketSleuth can also record traffic directly from a network interface — no upload needed. On the **Capture** page:
 
 1. Pick a network interface (and optionally a BPF filter, e.g. `tcp port 80`)
 2. Press **Start live capture** — a live packet counter and auto-stop countdown appear
@@ -279,13 +279,13 @@ The recorded traffic is saved as a PCAP and flows through the exact same analysi
 
 ## Current Status
 
-TrafficLens is currently a local, single-user application focused on PCAP-based network investigation and analysis.
+PacketSleuth is currently a local, single-user application focused on PCAP-based network investigation and analysis.
 
 The core analysis pipeline, flow reconstruction, protocol analysis, behavioral detection, timeline, graph, replay, and network engineering features are implemented.
 
 ## Contributing
 
-TrafficLens is an evolving project. Contributions, ideas, bug reports, and improvements are welcome.
+PacketSleuth is an evolving project. Contributions, ideas, bug reports, and improvements are welcome.
 
 If you have an idea that could make network traffic easier to understand or investigate, feel free to open an issue or submit a pull request.
 

@@ -8,18 +8,6 @@ import { formatTime } from '../components/ui'
 import { useDebouncedValue, useSelectedCapture } from '../hooks/captures'
 import type { TimelineEvent } from '../types/api'
 
-const TYPE_META: Record<string, { icon: string; color: string }> = {
-  dns_query: { icon: '❓', color: 'text-sky-400' },
-  dns_response: { icon: '✉', color: 'text-emerald-400' },
-  tcp_connect: { icon: '⇄', color: 'text-sky-400' },
-  udp_session: { icon: '◦', color: 'text-violet-400' },
-  tcp_reset: { icon: '⊗', color: 'text-red-400' },
-  flow_failed: { icon: '✕', color: 'text-amber-400' },
-  http_request: { icon: '⇅', color: 'text-sky-400' },
-  tls_handshake: { icon: '🔒', color: 'text-violet-400' },
-  alert: { icon: '⚠', color: 'text-red-400' },
-}
-
 const SEVERITY_DOT: Record<string, string> = {
   critical: 'bg-red-400',
   high: 'bg-orange-400',
@@ -142,7 +130,6 @@ function EventList({
   return (
     <div className="max-h-[65vh] overflow-y-auto">
       {events.map((e) => {
-        const meta = TYPE_META[e.event_type] ?? { icon: '·', color: 'text-slate-500' }
         return (
           <button
             key={e.id}
@@ -152,7 +139,6 @@ function EventList({
             <span className="w-16 shrink-0 font-mono text-xs text-slate-500">
               {formatTime(e.timestamp)}
             </span>
-            <span className={`w-4 shrink-0 text-center ${meta.color}`}>{meta.icon}</span>
             <span className="min-w-0 flex-1 truncate text-sm text-slate-300">{e.label}</span>
             {e.severity && (
               <span

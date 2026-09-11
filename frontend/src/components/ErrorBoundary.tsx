@@ -12,7 +12,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
     if (this.state.error) {
       return (
         <div className="flex h-full flex-col items-center justify-center gap-4 p-16 text-center">
-          <div className="text-4xl">⚠</div>
+          
           <h2 className="text-xl font-semibold text-slate-200">Something went wrong</h2>
           <p className="max-w-md font-mono text-xs text-slate-500">{this.state.error.message}</p>
           <button

@@ -124,7 +124,7 @@ export function AlertsPage() {
             rel="noreferrer"
             className="ml-auto rounded-lg px-3 py-1.5 text-xs font-medium text-sky-300 ring-1 ring-sky-500/30 transition hover:bg-sky-500/10"
           >
-            ⬇ Download report (HTML/PDF)
+            Download report (HTML/PDF)
           </a>
         )}
       </div>
@@ -355,7 +355,7 @@ function AlertCard({
                 ? 'Saving…'
                 : alert.acknowledged
                   ? 'Un-acknowledge'
-                  : '✓ Acknowledge'}
+                  : 'Acknowledge'}
             </button>
 
             {/* Triage tags */}
@@ -403,7 +403,7 @@ function AlertCard({
               }}
               className="rounded-lg px-2.5 py-1.5 text-xs text-slate-500 ring-1 ring-slate-700 transition hover:text-slate-300"
             >
-              {alert.note ? '✎ edit note' : '+ note'}
+              {alert.note ? 'edit note' : '+ note'}
             </button>
           </div>
 

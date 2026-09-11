@@ -43,13 +43,12 @@ export function Dashboard() {
 
       {/* Top statistics */}
       <div className="grid grid-cols-4 gap-4">
-        <StatCard label="Captures" value={captures?.length ?? 0} icon="⦿" />
-        <StatCard label="Analyzed" value={completed.length} icon="✓" tone="emerald" />
-        <StatCard label="Total Packets" value={totalPackets.toLocaleString()} icon="≋" />
+        <StatCard label="Captures" value={captures?.length ?? 0} />
+        <StatCard label="Analyzed" value={completed.length} tone="emerald" />
+        <StatCard label="Total Packets" value={totalPackets.toLocaleString()} />
         <StatCard
           label="Active Jobs"
           value={activeJob ? 1 : 0}
-          icon="⚙"
           tone={activeJob ? 'amber' : undefined}
         />
       </div>
@@ -75,25 +74,22 @@ export function Dashboard() {
       {/* Flow summary (Step 2) */}
       {lastFlowSummary && (
         <div className="mt-4 grid grid-cols-6 gap-4">
-          <FlowStat label="Flows" value={lastFlowSummary.flow_count ?? 0} icon="≋" />
-          <FlowStat label="TCP" value={lastFlowSummary.tcp_flows ?? 0} icon="→" />
-          <FlowStat label="UDP" value={lastFlowSummary.udp_flows ?? 0} icon="◦" />
+          <FlowStat label="Flows" value={lastFlowSummary.flow_count ?? 0} />
+          <FlowStat label="TCP" value={lastFlowSummary.tcp_flows ?? 0} />
+          <FlowStat label="UDP" value={lastFlowSummary.udp_flows ?? 0} />
           <FlowStat
             label="Failed"
             value={lastFlowSummary.failed_flows ?? 0}
-            icon="✕"
             tone="red"
           />
           <FlowStat
             label="Resets"
             value={lastFlowSummary.reset_flows ?? 0}
-            icon="⟲"
             tone="red"
           />
           <FlowStat
             label="Retransmitting"
             value={lastFlowSummary.retransmitting_flows ?? 0}
-            icon="↻"
             tone="amber"
           />
         </div>
@@ -105,7 +101,7 @@ export function Dashboard() {
           onClick={() => navigate('/alerts')}
           className="mt-4 flex w-full items-center gap-4 rounded-xl border border-red-500/20 bg-red-500/5 px-5 py-4 text-left transition hover:bg-red-500/10"
         >
-          <span className="text-2xl text-red-400">⚠</span>
+          
           <div className="flex-1">
             <div className="text-sm font-medium text-red-300">
               {alertSummary.total} alert{alertSummary.total > 1 ? 's' : ''} — max risk score{' '}
@@ -189,45 +185,46 @@ function CaptureRow({ capture }: { capture: Capture }) {
 function FlowStat({
   label,
   value,
-  icon,
   tone,
 }: {
   label: string
   value: number
-  icon: string
   tone?: 'red' | 'amber'
 }) {
-  const toneClass = tone === 'red' ? 'text-red-400' : tone === 'amber' ? 'text-amber-400' : 'text-sky-400'
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3">
       <div className="flex items-center justify-between">
         <span className="text-[10px] uppercase tracking-wider text-slate-500">{label}</span>
-        <span className={toneClass}>{icon}</span>
       </div>
-      <div className="mt-1 text-xl font-semibold text-slate-100">
+      <div
+        className={`mt-1 text-xl font-semibold ${
+          tone === 'red' ? 'text-red-400' : tone === 'amber' ? 'text-amber-400' : 'text-slate-100'
+        }`}
+      >
         {value.toLocaleString()}
       </div>
     </div>
   )
 }
 
-function StatCard({  label,
+function StatCard({
+  label,
   value,
-  icon,
   tone,
 }: {
   label: string
   value: string | number
-  icon: string
   tone?: 'emerald' | 'amber'
 }) {
-  const toneClass =
-    tone === 'emerald' ? 'text-emerald-400' : tone === 'amber' ? 'text-amber-400' : 'text-sky-400'
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
       <div className="flex items-center justify-between">
         <span className="text-xs uppercase tracking-wider text-slate-500">{label}</span>
-        <span className={toneClass}>{icon}</span>
+        <span
+          className={`h-1.5 w-1.5 rounded-full ${
+            tone === 'emerald' ? 'bg-emerald-400' : tone === 'amber' ? 'bg-amber-400' : 'bg-sky-400'
+          }`}
+        />
       </div>
       <div className="mt-2 text-2xl font-semibold text-slate-100">{value}</div>
     </div>
@@ -237,7 +234,7 @@ function StatCard({  label,
 function EmptyState() {
   return (
     <div className="flex flex-col items-center gap-3 p-12">
-      <div className="text-4xl text-slate-700">⦿</div>
+      <div className="h-10 w-10 rounded-full border-2 border-dashed border-slate-700" />
       <p className="text-sm text-slate-500">No captures yet.</p>
       <Link
         to="/capture"

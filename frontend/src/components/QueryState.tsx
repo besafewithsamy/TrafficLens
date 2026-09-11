@@ -20,7 +20,7 @@ export function QueryState({
   if (query.isError) {
     return (
       <StateShell>
-        <div className="text-red-400">⚠ {String(query.error)}</div>
+        <div className="text-red-400">{String(query.error)}</div>
         <button
           onClick={() => query.refetch()}
           className="mt-3 rounded-lg bg-slate-800 px-4 py-1.5 text-xs text-slate-300 ring-1 ring-slate-700 hover:bg-slate-700"

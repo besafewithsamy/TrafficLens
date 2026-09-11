@@ -41,7 +41,7 @@ export function Modal({
             {subtitle && <div className="mt-0.5 text-xs text-slate-500">{subtitle}</div>}
           </div>
           <button onClick={onClose} aria-label="Close" className="text-slate-500 hover:text-slate-300">
-            ✕
+            ×
           </button>
         </div>
         <div className="max-h-[70vh] overflow-y-auto">{children}</div>

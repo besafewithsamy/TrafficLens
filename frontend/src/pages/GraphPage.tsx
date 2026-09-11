@@ -166,7 +166,7 @@ export function GraphPage() {
                 {selectedNode.id}
               </div>
               <button onClick={() => setSelectedNode(null)} className="text-slate-500">
-                ✕
+                ×
               </button>
             </div>
             <div className="space-y-1.5 text-xs">
