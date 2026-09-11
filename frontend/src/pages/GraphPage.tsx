@@ -1,12 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import cytoscape, { type ElementDefinition } from 'cytoscape'
+import fcose from 'cytoscape-fcose'
 import { api } from '../api/client'
 import { CapturePicker } from '../components/CapturePicker'
 import { ErrorState } from '../components/states'
 import { formatBytes } from '../components/ui'
 import { useSelectedCapture } from '../hooks/captures'
 import type { GraphNodeData } from '../types/api'
+
+cytoscape.use(fcose)
 
 const NODE_STYLE: Record<string, { bg: string; border: string }> = {
   host: { bg: '#1e293b', border: '#38bdf8' },
@@ -25,9 +28,33 @@ const EDGE_COLORS: Record<string, string> = {
   EXPOSES: '#34d399',
 }
 
+const EDGE_FILTERS = ['DNS', 'RESOLVES_TO', 'HTTP', 'TLS', 'TCP', 'UDP', 'EXPOSES'] as const
+const NODE_FILTERS = ['domain', 'service'] as const
+// HTTP and HTTPS share a color/toggle; HTTPS maps onto the HTTP filter
+const filterForEdge = (type: string) => (type === 'HTTPS' ? 'HTTP' : type)
+
+const FCOSE_LAYOUT = {
+  name: 'fcose',
+  quality: 'default' as const,
+  animate: true,
+  animationDuration: 500,
+  fit: true,
+  padding: 30,
+  nodeSeparation: 120,
+  idealEdgeLength: (edge: { data: (k: string) => number }) =>
+    90 - Math.min(40, Math.log2(1 + (edge.data('packets') ?? 0)) * 10),
+  nodeRepulsion: () => 9000,
+}
+
 export function GraphPage() {
   const { analyzed, effectiveCaptureId, setCaptureId } = useSelectedCapture()
   const [selectedNode, setSelectedNode] = useState<GraphNodeData | null>(null)
+  const [edgeFilters, setEdgeFilters] = useState<Set<string>>(
+    () => new Set(EDGE_FILTERS as readonly string[]),
+  )
+  const [nodeFilters, setNodeFilters] = useState<Set<string>>(
+    () => new Set(NODE_FILTERS as readonly string[]),
+  )
   const containerRef = useRef<HTMLDivElement>(null)
 
   const { data: graph, isError } = useQuery({
@@ -36,13 +63,26 @@ export function GraphPage() {
     enabled: !!effectiveCaptureId,
   })
 
-  useEffect(() => {
-    if (!graph || !containerRef.current) return
+  // Filtered elements: hidden node types are removed entirely; edges are kept
+  // only when their type is enabled AND both endpoints survive node filtering.
+  const elements = useMemo(() => {
+    if (!graph) return []
+    const nodes = graph.nodes.filter((n) => !n.data.type || nodeFilters.has(n.data.type))
+    const nodeIds = new Set(nodes.map((n) => n.data.id))
+    const edges = graph.edges.filter(
+      (e) =>
+        edgeFilters.has(filterForEdge(e.data.type)) &&
+        nodeIds.has(e.data.source) &&
+        nodeIds.has(e.data.target),
+    )
+    return [
+      ...nodes.map((n) => ({ data: { ...n.data } })),
+      ...edges.map((e) => ({ data: { ...e.data } })),
+    ] as ElementDefinition[]
+  }, [graph, edgeFilters, nodeFilters])
 
-    const elements: ElementDefinition[] = [
-      ...graph.nodes.map((n) => ({ data: { ...n.data } })),
-      ...graph.edges.map((e) => ({ data: { ...e.data } })),
-    ]
+  useEffect(() => {
+    if (!containerRef.current) return
 
     const cy = cytoscape({
       container: containerRef.current,
@@ -90,7 +130,7 @@ export function GraphPage() {
           style: { opacity: 1, width: 4 },
         },
       ],
-      layout: { name: 'cose', animate: true, animationDuration: 400 },
+      layout: FCOSE_LAYOUT,
     })
 
     cy.on('tap', 'node', (e) => {
@@ -98,11 +138,12 @@ export function GraphPage() {
       setSelectedNode(d)
     })
     cy.on('tap', 'edge', () => setSelectedNode(null))
+    cy.fit(undefined, 30)
 
     return () => {
       cy.destroy()
     }
-  }, [graph])
+  }, [elements])
 
   return (
     <div className="flex h-full flex-col p-8">
@@ -122,24 +163,57 @@ export function GraphPage() {
       <div className="relative flex-1 overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
         <div ref={containerRef} className="h-full w-full" />
 
-        {/* legend */}
+        {/* legend / filters */}
         <div className="absolute left-3 top-3 space-y-1 rounded-lg bg-slate-900/90 p-3 text-[10px] ring-1 ring-slate-800">
           <div className="mb-1 font-medium text-slate-400">Edges</div>
-          {Object.entries(EDGE_COLORS).map(([name, color]) => (
-            <div key={name} className="flex items-center gap-2 text-slate-500">
-              <span className="inline-block h-0.5 w-5" style={{ background: color }} />
-              {name}
-            </div>
-          ))}
+          {EDGE_FILTERS.map((name) => {
+            const active = edgeFilters.has(name)
+            return (
+              <button
+                key={name}
+                onClick={() => toggleFilter(edgeFilters, setEdgeFilters, name)}
+                className={`flex items-center gap-2 text-left transition-opacity ${
+                  active ? 'text-slate-500' : 'text-slate-600 opacity-40'
+                }`}
+              >
+                <span
+                  className="inline-block h-0.5 w-5"
+                  style={{ background: EDGE_COLORS[name], opacity: active ? 1 : 0.3 }}
+                />
+                {name === 'RESOLVES_TO' ? 'resolves to' : name.toLowerCase()}
+              </button>
+            )
+          })}
           <div className="mt-2 mb-1 font-medium text-slate-400">Nodes</div>
-          <div className="flex items-center gap-2 text-slate-500">
-            <span className="h-3 w-3 rounded-full ring-1 ring-sky-400" /> host
-          </div>
-          <div className="flex items-center gap-2 text-slate-500">
-            <span className="h-3 w-3 rounded-full ring-1 ring-violet-400" /> domain
-          </div>
-          <div className="flex items-center gap-2 text-slate-500">
-            <span className="h-3 w-3 rounded-full ring-1 ring-red-400" /> alert host
+          {(
+            [
+              ['host', 'host', '#38bdf8'],
+              ['domain', 'domain', '#a78bfa'],
+              ['service', 'service', '#34d399'],
+            ] as const
+          ).map(([type, label, ring]) => {
+            const active = type === 'host' || nodeFilters.has(type)
+            return (
+              <button
+                key={type}
+                disabled={type === 'host'}
+                onClick={() => toggleFilter(nodeFilters, setNodeFilters, type)}
+                className={`flex items-center gap-2 text-left transition-opacity ${
+                  active ? 'text-slate-500' : 'text-slate-600 opacity-40'
+                }`}
+              >
+                <span
+                  className="h-3 w-3 rounded-full ring-1"
+                  style={{ boxShadow: `inset 0 0 0 1px ${ring}`, opacity: active ? 1 : 0.3 }}
+                />
+                {label}
+              </button>
+            )
+          })}
+          <div className="mt-2 border-t border-slate-800 pt-1.5 text-slate-600">
+            {elements.length > 0
+              ? `${elements.length} shown`
+              : 'nothing matches filters'}
           </div>
         </div>
 
@@ -200,6 +274,20 @@ export function GraphPage() {
       </div>
     </div>
   )
+}
+
+function toggleFilter(
+  current: Set<string>,
+  setter: (next: Set<string>) => void,
+  name: string,
+) {
+  const next = new Set(current)
+  if (next.has(name)) {
+    next.delete(name)
+  } else {
+    next.add(name)
+  }
+  setter(next)
 }
 
 function Row({ label, value, tone }: { label: string; value: string; tone?: 'red' }) {

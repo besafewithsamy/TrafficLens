@@ -16,8 +16,7 @@ PacketSleuth turns raw network traffic into a clear picture of network activity.
 Packets → Flows → Hosts → Behaviors → Events → Investigation
 ````
 
-## Screenshots
-
+## Overview
 
 ![Dashboard overview](assets/pic1.png)
 
