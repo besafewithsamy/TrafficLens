@@ -9,6 +9,8 @@ import type {
   HTTPTransaction,
   Host,
   Job,
+  LiveCapture,
+  LiveStatus,
   Page,
   ProtocolStats,
   TimelineEvent,
@@ -198,6 +200,28 @@ export const api = {
     if (after !== undefined) params.set('after', String(after))
     return request<TimelineEvent[]>(`/replay?${params}`)
   },
+
+  // Live capture (Phase 4)
+  liveInterfaces: () => request<string[]>('/live/interfaces'),
+
+  liveStart: (body: {
+    interface: string
+    bpf?: string
+    max_packets?: number
+    max_seconds?: number
+  }) =>
+    request<LiveStatus>('/live/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+
+  liveStatus: () => request<LiveStatus | null>('/live/status'),
+
+  liveStop: () =>
+    request<{ state: LiveStatus; capture: LiveCapture }>('/live/stop', {
+      method: 'POST',
+    }),
 
   // Engineer Mode (Step 6)
   getEngineerMetrics: (captureId: string) =>

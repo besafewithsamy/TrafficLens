@@ -131,6 +131,8 @@ export function CapturePage() {
         )}
       </div>
 
+      <LiveCapturePanel />
+
       {/* Selected capture detail */}
       {current && (
         <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900/40">
@@ -282,6 +284,142 @@ function SummaryStat({ label, value }: { label: string; value: string | number }
     <div className="rounded-lg bg-slate-800/40 px-3 py-2.5 ring-1 ring-slate-800">
       <div className="text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
       <div className="mt-0.5 font-semibold text-slate-200">{value}</div>
+    </div>
+  )
+}
+
+function LiveCapturePanel() {
+  const queryClient = useQueryClient()
+  const [iface, setIface] = useState('')
+  const [bpf, setBpf] = useState('')
+  const [duration, setDuration] = useState(60)
+  const [liveError, setLiveError] = useState<string | null>(null)
+
+  const { data: interfaces } = useQuery({
+    queryKey: ['liveInterfaces'],
+    queryFn: api.liveInterfaces,
+    staleTime: 60_000,
+  })
+
+  // poll live status fast while recording, slow when idle
+  const { data: live } = useQuery({
+    queryKey: ['liveStatus'],
+    queryFn: api.liveStatus,
+    refetchInterval: (q) => (q.state.data?.status === 'running' ? 1000 : false),
+  })
+
+  const start = useMutation({
+    mutationFn: () =>
+      api.liveStart({
+        interface: iface,
+        bpf: bpf || undefined,
+        max_seconds: duration,
+      }),
+    onSuccess: () => {
+      setLiveError(null)
+      queryClient.invalidateQueries({ queryKey: ['liveStatus'] })
+    },
+    onError: (err) => setLiveError(err.message),
+  })
+
+  const stop = useMutation({
+    mutationFn: api.liveStop,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['liveStatus'] })
+      queryClient.invalidateQueries({ queryKey: ['captures'] })
+    },
+    onError: (err) => setLiveError(err.message),
+  })
+
+  const running = live?.status === 'running'
+  const effectiveIface = iface || interfaces?.[0] || ''
+
+  return (
+    <div className="mt-6 rounded-xl border border-sky-500/20 bg-sky-500/5 p-5">
+      <div className="mb-3 flex items-center gap-3">
+        <span className="text-lg text-sky-400">◉</span>
+        <div className="flex-1">
+          <div className="text-sm font-medium text-slate-200">Live capture</div>
+          <div className="text-xs text-slate-500">
+            Record traffic from a network interface, then analyze it like an upload
+          </div>
+        </div>
+        {running && (
+          <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300 ring-1 ring-emerald-500/30">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+            recording · {live?.packet_count.toLocaleString()} packets ·{' '}
+            {live?.elapsed_seconds.toFixed(0)}s
+          </span>
+        )}
+      </div>
+
+      {!running ? (
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <select
+            aria-label="Network interface"
+            value={effectiveIface}
+            onChange={(e) => setIface(e.target.value)}
+            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200"
+          >
+            {(interfaces ?? []).map((i) => (
+              <option key={i} value={i}>
+                {i}
+              </option>
+            ))}
+          </select>
+          <input
+            value={bpf}
+            onChange={(e) => setBpf(e.target.value)}
+            placeholder="BPF filter (optional) — e.g. tcp port 80"
+            aria-label="BPF filter"
+            className="w-72 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200 placeholder-slate-600 focus:border-sky-500/50 focus:outline-none"
+          />
+          <select
+            aria-label="Duration"
+            value={duration}
+            onChange={(e) => setDuration(Number(e.target.value))}
+            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200"
+          >
+            {[15, 30, 60, 300, 900].map((d) => (
+              <option key={d} value={d}>
+                {d < 60 ? `${d}s` : `${d / 60}min`}
+              </option>
+            ))}
+          </select>
+          <button
+            disabled={!effectiveIface || start.isPending}
+            onClick={() => start.mutate()}
+            className="rounded-lg bg-sky-500/10 px-4 py-1.5 text-sm font-medium text-sky-300 ring-1 ring-sky-500/30 transition hover:bg-sky-500/20 disabled:opacity-50"
+          >
+            {start.isPending ? 'Starting…' : '◉ Start live capture'}
+          </button>
+          {live?.status === 'stopped' && (
+            <span className="text-xs text-emerald-400">
+              stopped · {live.packet_count.toLocaleString()} packets captured
+            </span>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <span className="font-mono text-xs text-slate-400">
+            {live?.interface}
+            {live?.bpf ? ` · filter: ${live.bpf}` : ''} · auto-stop in{' '}
+            {Math.max(0, (live?.max_seconds ?? 0) - (live?.elapsed_seconds ?? 0)).toFixed(0)}s
+          </span>
+          <button
+            disabled={stop.isPending}
+            onClick={() => stop.mutate()}
+            className="rounded-lg bg-red-500/10 px-4 py-1.5 text-sm font-medium text-red-300 ring-1 ring-red-500/30 transition hover:bg-red-500/20 disabled:opacity-50"
+          >
+            {stop.isPending ? 'Stopping…' : '■ Stop & analyze'}
+          </button>
+        </div>
+      )}
+
+      {liveError && <p className="mt-3 text-sm text-red-400">{liveError}</p>}
+      {live?.status === 'failed' && live.error && (
+        <p className="mt-3 text-sm text-red-400">{live.error}</p>
+      )}
     </div>
   )
 }

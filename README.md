@@ -19,6 +19,7 @@ Packets → Flows → Hosts → Behaviors → Events → Investigation
 
 ### Traffic Investigation
 
+* Live interface capture with BPF filtering and auto-stop
 * Reconstructs bidirectional TCP and UDP flows
 * IPv4 and IPv6 traffic with correct internal/external direction classification
 * Tracks packets, bytes, duration, and direction
@@ -249,16 +250,25 @@ pytest tests/ -q
 
 TrafficLens also uses deterministic synthetic PCAPs to make analysis scenarios reproducible during development and testing.
 
+## Live Capture
+
+TrafficLens can also record traffic directly from a network interface — no upload needed. On the **Capture** page:
+
+1. Pick a network interface (and optionally a BPF filter, e.g. `tcp port 80`)
+2. Press **Start live capture** — a live packet counter and auto-stop countdown appear
+3. Press **Stop & analyze** (or let the auto-stop timer fire)
+
+The recorded traffic is saved as a PCAP and flows through the exact same analysis pipeline as an upload — flows, hosts, alerts, timeline, everything.
+
+> Note: live sniffing needs elevated permissions. Run the backend as root, or grant the Python process `CAP_NET_RAW`/`CAP_NET_ADMIN` capabilities. Interface listing and all other features work unprivileged.
+
 ## Roadmap
 
-* Live network interface capture
-* IPv6 support
-* Real-time analysis updates
+* Real-time streaming analysis of live captures
 * PCAP analysis caching
 * Multi-PCAP investigations
 * Investigation and report export
 * Additional protocol parsers
-* Additional behavioral detections
 
 ## Current Status
 

@@ -68,6 +68,24 @@ export interface CaptureSummary {
   }[]
 }
 
+export interface LiveStatus {
+  status: 'running' | 'stopped' | 'failed'
+  interface: string
+  bpf: string | null
+  packet_count: number
+  elapsed_seconds: number
+  max_packets: number
+  max_seconds: number
+  error: string | null
+}
+
+export interface LiveCapture {
+  id: string
+  filename: string
+  source: 'live'
+  status: string
+}
+
 export interface Job {
   id: string
   capture_id: string
