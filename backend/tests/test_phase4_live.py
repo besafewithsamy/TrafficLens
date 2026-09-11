@@ -13,12 +13,18 @@ from app.services.live_capture import LiveCaptureError, LiveCaptureManager
 
 
 class FakeSniffer:
-    """Mimics the AsyncSniffer surface LiveCaptureManager uses."""
+    """Mimics the real AsyncSniffer (scapy 2.7.0) surface LiveCaptureManager uses:
 
-    def __init__(self, interface: str, bpf: str | None, packet_counter: int = 0) -> None:
+    - count: running packet counter (NOT packet_counter — that attr doesn't exist)
+    - stop(join=True): raises TypeError if called with timeout= (the bug we
+      regressed against in the wild); returns the PacketList when join=True
+    - join(timeout): bounded thread-join emulation
+    """
+
+    def __init__(self, interface: str, bpf: str | None, count: int = 0) -> None:
         self.iface = interface
         self.filter = bpf
-        self.packet_counter = packet_counter
+        self.count = count
         self.results: list = []
         self.started = False
         self.stopped = False
@@ -29,8 +35,14 @@ class FakeSniffer:
             raise self.start_raises
         self.started = True
 
-    def stop(self, timeout: int = 5) -> None:
+    def stop(self, join: bool = True):
         self.stopped = True
+        if join:
+            return self.results
+        return None
+
+    def join(self, timeout: float | None = None) -> None:
+        return None
 
 
 def _make_manager(monkeypatch, interfaces=("lo", "eth0"), sniffer=None):
@@ -94,7 +106,7 @@ def test_stop_persists_capture_and_submits_analysis(monkeypatch, app_env):
     sniffer.results = [
         Ether() / IP(src="10.0.0.1", dst="10.0.0.2") / TCP(sport=1, dport=2, flags="S"),
     ]
-    sniffer.packet_counter = 1
+    sniffer.count = 1
     mgr, _ = _make_manager(monkeypatch, sniffer=sniffer)
 
     submitted: list = []
@@ -226,3 +238,36 @@ def test_real_live_capture_lo():
     assert result["state"]["status"] == "stopped"
     assert result["state"]["packet_count"] >= 1, "expected to capture the loopback ping"
     assert result["capture"]["source"] == "live"
+
+
+def test_scapy_stop_signature_compat():
+    """Guard: the real AsyncSniffer.stop() must accept the kwargs we call it with.
+
+    The original live-capture bug (stop(timeout=5) TypeError) shipped because
+    the FakeSniffer mirrored the wrong API. This checks the REAL scapy class.
+    """
+    import inspect
+
+    from scapy.all import AsyncSniffer
+
+    params = inspect.signature(AsyncSniffer.stop).parameters
+    assert "join" in params, f"scapy stop() signature changed: {list(params)}"
+    assert "timeout" not in params, "scapy added a timeout kwarg — revisit stop() call"
+    # join() must accept a timeout bound (we rely on it for the 5s cap)
+    join_params = inspect.signature(AsyncSniffer.join).parameters
+    assert len(join_params) >= 1, f"AsyncSniffer.join no longer accepts args: {join_params}"
+
+
+def test_fake_sniffer_mirrors_real_surface():
+    """The fake must keep mirroring the real sniffer's used API surface."""
+    import inspect
+
+    from scapy.all import AsyncSniffer
+
+    real_stop = inspect.signature(AsyncSniffer.stop).parameters
+    fake_stop = inspect.signature(FakeSniffer.stop).parameters
+    assert set(fake_stop) == set(real_stop), (
+        f"FakeSniffer.stop {list(fake_stop)} drifted from AsyncSniffer.stop {list(real_stop)}"
+    )
+    for attr in ("count", "results", "start", "join"):
+        assert hasattr(FakeSniffer("lo", None), attr) or attr in FakeSniffer.__dict__

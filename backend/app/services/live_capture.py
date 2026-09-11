@@ -91,8 +91,10 @@ class LiveCaptureManager:
         sniffer = self._sniffer
         if sniffer is None:
             return 0
-        return int(getattr(sniffer, "packet_counter", 0)) or len(
-            getattr(sniffer, "results", []) or []
+        # scapy 2.7.0 AsyncSniffer counts in `.count`; fall back to the
+        # recorded results list for custom/fake sniffers that don't.
+        return int(getattr(sniffer, "count", 0)) or len(
+            getattr(sniffer, "results", None) or []
         )
 
     # ---------------- lifecycle ----------------
@@ -156,12 +158,21 @@ class LiveCaptureManager:
 
             packets = []
             try:
-                sniffer.stop(timeout=5)
-                packets = list(getattr(sniffer, "results", []) or [])
+                # scapy 2.7.0: stop(join=True) blocks in the socket read until the
+                # next packet arrives — potentially forever on a quiet interface.
+                # Detach first, then bound the thread join to 5s so Stop always
+                # returns. Packets recorded before the detach are still collected.
+                sniffer.stop(join=False)
+                sniffer.join(5)
+                packets = list(getattr(sniffer, "results", None) or [])
             except Exception as exc:
-                s.status = "failed"
-                s.error = f"failed to stop sniffer cleanly: {exc}"
-                raise LiveCaptureError(s.error) from exc
+                # The recording itself may still be salvageable — persist what
+                # we have instead of discarding everything on a stop hiccup.
+                packets = list(getattr(sniffer, "results", None) or [])
+                if not packets:
+                    s.status = "failed"
+                    s.error = f"failed to stop sniffer cleanly: {exc}"
+                    raise LiveCaptureError(s.error) from exc
             finally:
                 self._sniffer = None
 
