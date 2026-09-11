@@ -7,7 +7,7 @@ import { CapturePicker } from '../components/CapturePicker'
 import { ErrorState } from '../components/states'
 import { formatBytes } from '../components/ui'
 import { useSelectedCapture } from '../hooks/captures'
-import type { GraphNodeData } from '../types/api'
+import type { Graph, GraphNodeData } from '../types/api'
 
 cytoscape.use(fcose)
 
@@ -28,10 +28,39 @@ const EDGE_COLORS: Record<string, string> = {
   EXPOSES: '#34d399',
 }
 
-const EDGE_FILTERS = ['DNS', 'RESOLVES_TO', 'HTTP', 'TLS', 'TCP', 'UDP', 'EXPOSES'] as const
-const NODE_FILTERS = ['domain', 'service'] as const
+const KNOWN_EDGE_TYPES = ['DNS', 'RESOLVES_TO', 'HTTP', 'TLS', 'TCP', 'UDP', 'EXPOSES']
 // HTTP and HTTPS share a color/toggle; HTTPS maps onto the HTTP filter
 const filterForEdge = (type: string) => (type === 'HTTPS' ? 'HTTP' : type)
+const edgeColor = (type: string) => EDGE_COLORS[type] ?? '#f472b6'
+const edgeLabel = (type: string) =>
+  type === 'RESOLVES_TO' ? 'resolves to' : type.toLowerCase()
+
+type EdgeGroup = { key: string; color: string; label: string; count: number }
+
+// Group the actual edge types found in this graph into toggle entries:
+// known types get their canonical toggle; anything else (QUIC, C2-PORT, …)
+// becomes its own toggle so no edge is implicitly hidden.
+function buildEdgeGroups(graph: Graph): EdgeGroup[] {
+  const counts = new Map<string, { count: number; original: string }>()
+  for (const e of graph.edges) {
+    const key = filterForEdge(e.data.type)
+    const cur = counts.get(key)
+    if (cur) {
+      cur.count += 1
+    } else {
+      counts.set(key, { count: 1, original: e.data.type })
+    }
+  }
+  const groups: EdgeGroup[] = [...KNOWN_EDGE_TYPES, ...[...counts.keys()].filter(
+    (k) => !KNOWN_EDGE_TYPES.includes(k),
+  )]
+    .filter((key) => counts.has(key))
+    .map((key) => {
+      const { count } = counts.get(key)!
+      return { key, color: edgeColor(key), label: edgeLabel(key), count }
+    })
+  return groups
+}
 
 const FCOSE_LAYOUT = {
   name: 'fcose',
@@ -49,11 +78,9 @@ const FCOSE_LAYOUT = {
 export function GraphPage() {
   const { analyzed, effectiveCaptureId, setCaptureId } = useSelectedCapture()
   const [selectedNode, setSelectedNode] = useState<GraphNodeData | null>(null)
-  const [edgeFilters, setEdgeFilters] = useState<Set<string>>(
-    () => new Set(EDGE_FILTERS as readonly string[]),
-  )
+  const [edgeFilters, setEdgeFilters] = useState<Set<string> | null>(null)
   const [nodeFilters, setNodeFilters] = useState<Set<string>>(
-    () => new Set(NODE_FILTERS as readonly string[]),
+    () => new Set(['domain', 'service']),
   )
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -63,15 +90,25 @@ export function GraphPage() {
     enabled: !!effectiveCaptureId,
   })
 
-  // Filtered elements: hidden node types are removed entirely; edges are kept
-  // only when their type is enabled AND both endpoints survive node filtering.
+  const edgeGroups = useMemo(() => (graph ? buildEdgeGroups(graph) : []), [graph])
+
+  // null = all enabled (fresh capture); user toggles carve out exclusions
+  const activeEdgeFilters = edgeFilters ?? new Set(edgeGroups.map((g) => g.key))
+  const toggleEdgeFilter = (key: string) => {
+    setEdgeFilters(toggleInSet(activeEdgeFilters, key))
+  }
+
+  // Filtered elements: hosts always render; domain/service nodes and edge
+  // types are toggleable. Edges survive only when both endpoints do.
   const elements = useMemo(() => {
     if (!graph) return []
-    const nodes = graph.nodes.filter((n) => !n.data.type || nodeFilters.has(n.data.type))
+    const nodes = graph.nodes.filter(
+      (n) => n.data.type === 'host' || !n.data.type || nodeFilters.has(n.data.type),
+    )
     const nodeIds = new Set(nodes.map((n) => n.data.id))
     const edges = graph.edges.filter(
       (e) =>
-        edgeFilters.has(filterForEdge(e.data.type)) &&
+        activeEdgeFilters.has(filterForEdge(e.data.type)) &&
         nodeIds.has(e.data.source) &&
         nodeIds.has(e.data.target),
     )
@@ -79,7 +116,7 @@ export function GraphPage() {
       ...nodes.map((n) => ({ data: { ...n.data } })),
       ...edges.map((e) => ({ data: { ...e.data } })),
     ] as ElementDefinition[]
-  }, [graph, edgeFilters, nodeFilters])
+  }, [graph, activeEdgeFilters, nodeFilters])
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -117,8 +154,7 @@ export function GraphPage() {
           style: {
             width: (ele: { data: (k: string) => any }) =>
               Math.min(1 + Math.log2(1 + (ele.data('packets') ?? 1)), 6),
-            'line-color': (ele: { data: (k: string) => any }) =>
-              EDGE_COLORS[ele.data('type')] ?? '#475569',
+            'line-color': (ele: { data: (k: string) => any }) => edgeColor(ele.data('type')),
             'target-arrow-shape': 'triangle',
             'arrow-scale': 0.7,
             'curve-style': 'bezier',
@@ -166,21 +202,22 @@ export function GraphPage() {
         {/* legend / filters */}
         <div className="absolute left-3 top-3 space-y-1 rounded-lg bg-slate-900/90 p-3 text-[10px] ring-1 ring-slate-800">
           <div className="mb-1 font-medium text-slate-400">Edges</div>
-          {EDGE_FILTERS.map((name) => {
-            const active = edgeFilters.has(name)
+          {edgeGroups.map((g) => {
+            const active = activeEdgeFilters.has(g.key)
             return (
               <button
-                key={name}
-                onClick={() => toggleFilter(edgeFilters, setEdgeFilters, name)}
+                key={g.key}
+                onClick={() => toggleEdgeFilter(g.key)}
                 className={`flex items-center gap-2 text-left transition-opacity ${
                   active ? 'text-slate-500' : 'text-slate-600 opacity-40'
                 }`}
               >
                 <span
                   className="inline-block h-0.5 w-5"
-                  style={{ background: EDGE_COLORS[name], opacity: active ? 1 : 0.3 }}
+                  style={{ background: g.color, opacity: active ? 1 : 0.3 }}
                 />
-                {name === 'RESOLVES_TO' ? 'resolves to' : name.toLowerCase()}
+                <span className="flex-1">{g.label}</span>
+                <span className="text-slate-600">{g.count}</span>
               </button>
             )
           })}
@@ -197,7 +234,7 @@ export function GraphPage() {
               <button
                 key={type}
                 disabled={type === 'host'}
-                onClick={() => toggleFilter(nodeFilters, setNodeFilters, type)}
+                onClick={() => setNodeFilters(toggleInSet(nodeFilters, type))}
                 className={`flex items-center gap-2 text-left transition-opacity ${
                   active ? 'text-slate-500' : 'text-slate-600 opacity-40'
                 }`}
@@ -276,18 +313,14 @@ export function GraphPage() {
   )
 }
 
-function toggleFilter(
-  current: Set<string>,
-  setter: (next: Set<string>) => void,
-  name: string,
-) {
+function toggleInSet(current: Iterable<string>, name: string): Set<string> {
   const next = new Set(current)
   if (next.has(name)) {
     next.delete(name)
   } else {
     next.add(name)
   }
-  setter(next)
+  return next
 }
 
 function Row({ label, value, tone }: { label: string; value: string; tone?: 'red' }) {
