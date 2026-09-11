@@ -19,7 +19,7 @@ COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/app ./app
-COPY backend/pyproject.toml mypy.ini ./
+COPY backend/pyproject.toml backend/mypy.ini ./
 COPY --from=frontend-build /build/dist ./app/dist
 
 # persistent analysis data (SQLite DB + uploads)
