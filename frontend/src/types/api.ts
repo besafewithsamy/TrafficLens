@@ -79,6 +79,37 @@ export interface LiveStatus {
   error: string | null
 }
 
+export interface Case {
+  id: string
+  name: string
+  description: string | null
+  capture_ids: string[]
+  status: 'open' | 'closed'
+  created_at: string
+  updated_at: string | null
+}
+
+export interface CaseDetail extends Case {
+  captures: Capture[]
+  stats: {
+    capture_count: number
+    total_packets: number
+    total_alerts: number
+    alerts_by_severity: Record<string, number>
+    incidents: {
+      source_ip: string
+      rule_names: string[]
+      alert_count: number
+      max_score: number
+      severity: string
+      title: string
+      story: string
+    }[]
+    first_event_ts: number | null
+    last_event_ts: number | null
+  }
+}
+
 export interface LiveCapture {
   id: string
   filename: string
@@ -294,6 +325,8 @@ export interface Alert {
   related_packet_refs: number[]
   explanation: string | null
   acknowledged: boolean
+  tags: string[]
+  note: string | null
   timestamp: number | null
   created_at: string
 }

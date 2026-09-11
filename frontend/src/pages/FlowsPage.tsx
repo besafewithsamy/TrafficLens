@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import {
   createColumnHelper,
   flexRender,
@@ -39,6 +40,20 @@ export function FlowsPage() {
   const [sort, setSort] = useState('first_seen')
   const [order, setOrder] = useState('asc')
   const [selectedFlowId, setSelectedFlowId] = useState<string | null>(null)
+
+  // Deep links: /flows?capture_id=…&flow=… opens that capture + flow's evidence modal
+  const [searchParams] = useSearchParams()
+  const deepCaptureId = searchParams.get('capture_id')
+  const deepFlowId = searchParams.get('flow')
+  useEffect(() => {
+    if (deepCaptureId) {
+      setCaptureId(deepCaptureId)
+      setOffset(0)
+    }
+    if (deepFlowId) setSelectedFlowId(deepFlowId)
+    // runs once per navigation; deep-link params stay in the URL harmlessly
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepCaptureId, deepFlowId])
 
   const { data: page, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['flows', effectiveCaptureId, transport, direction, sort, order, offset],

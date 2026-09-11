@@ -18,6 +18,7 @@ const NAV: NavItem[] = [
   { to: '/timeline', label: 'Timeline', icon: '⏱' },
   { to: '/graph', label: 'Graph', icon: '⦾' },
   { to: '/alerts', label: 'Alerts', icon: '⚠' },
+  { to: '/cases', label: 'Cases', icon: '🗂' },
   { to: '/replay', label: 'Replay', icon: '▶' },
   { to: '/engineer', label: 'Engineer Mode', icon: '⚙' },
 ]

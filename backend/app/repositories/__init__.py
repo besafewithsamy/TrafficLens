@@ -9,6 +9,7 @@ from app.db.orm import (
     AlertModel,
     AnalysisJobModel,
     CaptureModel,
+    CaseModel,
     DNSTransactionModel,
     FlowModel,
     HTTPTransactionModel,
@@ -16,6 +17,7 @@ from app.db.orm import (
     PacketModel,
     TLSSessionModel,
     TimelineEventModel,
+    utcnow,
 )
 
 
@@ -330,6 +332,13 @@ class AlertRepository:
         self.db.refresh(alert)
         return alert
 
+    def update(self, alert: AlertModel, **fields) -> AlertModel:
+        for key, value in fields.items():
+            setattr(alert, key, value)
+        self.db.commit()
+        self.db.refresh(alert)
+        return alert
+
 
 class TimelineRepository:
     def __init__(self, db: Session) -> None:
@@ -524,3 +533,57 @@ class PacketRepository:
         )
         self.db.commit()
         return result.rowcount or 0
+
+
+class CaseRepository:
+    """Investigation cases — groups of related captures."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def create(self, name: str, description: str | None = None) -> CaseModel:
+        case = CaseModel(
+            id=new_id(),
+            name=name,
+            description=description,
+            capture_ids=[],
+            status="open",
+        )
+        self.db.add(case)
+        self.db.commit()
+        self.db.refresh(case)
+        return case
+
+    def get(self, case_id: str) -> CaseModel | None:
+        return self.db.get(CaseModel, case_id)
+
+    def list(self, limit: int = 100) -> list[CaseModel]:
+        stmt = select(CaseModel).order_by(desc(CaseModel.created_at)).limit(limit)
+        return list(self.db.scalars(stmt))
+
+    def update(self, case: CaseModel, **fields) -> CaseModel:
+        for key, value in fields.items():
+            setattr(case, key, value)
+        case.updated_at = utcnow()
+        self.db.commit()
+        self.db.refresh(case)
+        return case
+
+    def add_capture(self, case: CaseModel, capture_id: str) -> CaseModel:
+        ids = list(case.capture_ids or [])
+        if capture_id not in ids:
+            ids.append(capture_id)
+            return self.update(case, capture_ids=ids)
+        return case
+
+    def remove_capture(self, case: CaseModel, capture_id: str) -> CaseModel:
+        ids = [c for c in (case.capture_ids or []) if c != capture_id]
+        return self.update(case, capture_ids=ids)
+
+    def delete(self, case_id: str) -> bool:
+        case = self.get(case_id)
+        if case is None:
+            return False
+        self.db.delete(case)
+        self.db.commit()
+        return True

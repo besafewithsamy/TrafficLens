@@ -35,6 +35,7 @@ const RULE_LABELS: Record<string, string> = {
 export function AlertsPage() {
   const { analyzed, effectiveCaptureId, setCaptureId } = useSelectedCapture()
   const [severity, setSeverity] = useState('')
+  const [unconfirmedOnly, setUnconfirmedOnly] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
@@ -45,11 +46,29 @@ export function AlertsPage() {
     enabled: !!effectiveCaptureId,
   })
 
-  const alerts = page?.items ?? []
+  const allAlerts = page?.items ?? []
+  const alerts = unconfirmedOnly
+    ? allAlerts.filter(
+        (a) => !a.tags.includes('confirmed') && !a.tags.includes('false-positive'),
+      )
+    : allAlerts
 
   const ack = useMutation({
     mutationFn: ({ id, acknowledged }: { id: string; acknowledged: boolean }) =>
       api.ackAlert(id, acknowledged),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
+  })
+
+  const triage = useMutation({
+    mutationFn: ({
+      id,
+      ...body
+    }: {
+      id: string
+      acknowledged?: boolean
+      tags?: string[]
+      note?: string
+    }) => api.triageAlert(id, body),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
   })
 
@@ -61,7 +80,7 @@ export function AlertsPage() {
   })
   const incidents = captureDetail?.summary?.incidents ?? []
 
-  const counts = (alerts ?? []).reduce<Record<string, number>>((acc, a) => {
+  const counts = allAlerts.reduce<Record<string, number>>((acc, a) => {
     acc[a.severity] = (acc[a.severity] ?? 0) + 1
     return acc
   }, {})
@@ -89,6 +108,25 @@ export function AlertsPage() {
             {s && counts[s] ? ` (${counts[s]})` : ''}
           </button>
         ))}
+        <label className="ml-2 flex cursor-pointer items-center gap-1.5 text-xs text-slate-500">
+          <input
+            type="checkbox"
+            checked={unconfirmedOnly}
+            onChange={(e) => setUnconfirmedOnly(e.target.checked)}
+            className="accent-emerald-500"
+          />
+          hide confirmed & false-positives
+        </label>
+        {effectiveCaptureId && (
+          <a
+            href={api.captureReportUrl(effectiveCaptureId)}
+            target="_blank"
+            rel="noreferrer"
+            className="ml-auto rounded-lg px-3 py-1.5 text-xs font-medium text-sky-300 ring-1 ring-sky-500/30 transition hover:bg-sky-500/10"
+          >
+            ⬇ Download report (HTML/PDF)
+          </a>
+        )}
       </div>
 
       {/* Correlated incidents */}
@@ -141,9 +179,15 @@ export function AlertsPage() {
               expanded={expanded === alert.id}
               onToggle={() => setExpanded(expanded === alert.id ? null : alert.id)}
               onAck={(v) => ack.mutate({ id: alert.id, acknowledged: v })}
-              ackPending={
-                ack.isPending && ack.variables?.id === alert.id
-              }
+              ackPending={ack.isPending && ack.variables?.id === alert.id}
+                  onToggleTag={(tag, active) => {
+                    const next = active
+                      ? alert.tags.filter((t) => t !== tag)
+                      : [...alert.tags, tag]
+                    triage.mutate({ id: alert.id, tags: next })
+                  }}
+                  onSaveNote={(note) => triage.mutate({ id: alert.id, note })}
+              triagePending={triage.isPending && triage.variables?.id === alert.id}
             />
           ))}
         </div>
@@ -158,14 +202,22 @@ function AlertCard({
   onToggle,
   onAck,
   ackPending,
+  onToggleTag,
+  onSaveNote,
+  triagePending,
 }: {
   alert: Alert
   expanded: boolean
   onToggle: () => void
   onAck: (v: boolean) => void
   ackPending?: boolean
+  onToggleTag: (tag: string, active: boolean) => void
+  onSaveNote: (note: string) => void
+  triagePending?: boolean
 }) {
   const style = SEVERITY_STYLE[alert.severity] ?? SEVERITY_STYLE.info
+  const [showNote, setShowNote] = useState(false)
+  const [noteDraft, setNoteDraft] = useState(alert.note ?? '')
 
   return (
     <div
@@ -284,7 +336,7 @@ function AlertCard({
           )}
 
           {/* Actions */}
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -305,12 +357,100 @@ function AlertCard({
                   ? 'Un-acknowledge'
                   : '✓ Acknowledge'}
             </button>
+
+            {/* Triage tags */}
+            {(['confirmed', 'false-positive', 'escalated'] as const).map((tag) => {
+              const active = alert.tags.includes(tag)
+              return (
+                <button
+                  key={tag}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onToggleTag(tag, active)
+                  }}
+                  className={`rounded-lg px-2.5 py-1.5 text-xs ring-1 transition ${
+                    active
+                      ? tag === 'confirmed'
+                        ? 'bg-emerald-500/10 text-emerald-300 ring-emerald-500/30'
+                        : tag === 'false-positive'
+                          ? 'bg-slate-500/10 text-slate-300 ring-slate-500/30'
+                          : 'bg-red-500/10 text-red-300 ring-red-500/30'
+                      : 'text-slate-500 ring-slate-700 hover:text-slate-300'
+                  }`}
+                >
+                  {tag}
+                </button>
+              )
+            })}
+
+            {/* Deep link: jump to first related flow's evidence */}
             {alert.related_flow_ids.length > 0 && (
-              <span className="text-xs text-slate-500">
-                {alert.related_flow_ids.length} related flow(s) — see Flows page
-              </span>
+              <a
+                href={`/flows?capture_id=${alert.capture_id}&flow=${alert.related_flow_ids[0]}`}
+                onClick={(e) => e.stopPropagation()}
+                className="rounded-lg px-3 py-1.5 text-xs text-sky-400 ring-1 ring-sky-500/30 transition hover:bg-sky-500/10"
+              >
+                {alert.related_flow_ids.length} related flow{alert.related_flow_ids.length > 1 ? 's' : ''} →
+                view evidence
+              </a>
             )}
+
+            {/* Analyst note */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowNote(!showNote)
+              }}
+              className="rounded-lg px-2.5 py-1.5 text-xs text-slate-500 ring-1 ring-slate-700 transition hover:text-slate-300"
+            >
+              {alert.note ? '✎ edit note' : '+ note'}
+            </button>
           </div>
+
+          {/* Note editor */}
+          {showNote && (
+            <div className="mt-3">
+              <textarea
+                value={noteDraft}
+                onChange={(e) => setNoteDraft(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                placeholder="Analyst note — e.g. 'checked with John, this server is legit'"
+                aria-label="Analyst note"
+                rows={2}
+                className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2.5 text-sm text-slate-200 placeholder-slate-600 focus:border-emerald-500/50 focus:outline-none"
+              />
+              <div className="mt-1.5 flex gap-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSaveNote(noteDraft)
+                    setShowNote(false)
+                  }}
+                  disabled={triagePending}
+                  className="rounded-lg bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300 ring-1 ring-emerald-500/30 hover:bg-emerald-500/20 disabled:opacity-50"
+                >
+                  {triagePending ? 'Saving…' : 'Save note'}
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowNote(false)
+                  }}
+                  className="rounded-lg px-3 py-1 text-xs text-slate-400 ring-1 ring-slate-700 hover:text-slate-200"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Saved note display */}
+          {alert.note && !showNote && (
+            <div className="mt-3 rounded-lg border-l-2 border-emerald-500/50 bg-slate-900/60 p-2.5 text-sm text-slate-300">
+              <span className="text-[10px] uppercase tracking-wider text-slate-500">Note</span>{' '}
+              {alert.note}
+            </div>
+          )}
         </div>
       )}
     </div>

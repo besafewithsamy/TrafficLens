@@ -110,3 +110,26 @@ def analyze_capture(
 def list_parsers():
     """Parser availability (scapy default; tshark optional)."""
     return registry.available()
+
+
+@router.get("/{capture_id}/report")
+def capture_report(capture_id: str, db: Session = Depends(get_db)):
+    """Download a self-contained HTML investigation report (printable to PDF)."""
+    from fastapi.responses import HTMLResponse
+
+    from app.services.report import build_report
+
+    capture = CaptureRepository(db).get(capture_id)
+    if capture is None:
+        raise HTTPException(404, "Capture not found")
+    if capture.status != "completed":
+        raise HTTPException(409, "Capture must be analyzed before a report can be generated")
+
+    safe_name = capture.filename.replace("/", "_").replace(".", "_")
+    html_body = build_report(db, capture)
+    return HTMLResponse(
+        content=html_body,
+        headers={
+            "Content-Disposition": f'inline; filename="trafficlens_report_{safe_name}.html"',
+        },
+    )

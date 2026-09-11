@@ -164,6 +164,8 @@ class AlertModel(Base):
     related_packet_refs: Mapped[list] = mapped_column(JSON, default=list)
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     acknowledged: Mapped[bool] = mapped_column(Integer, default=False)
+    tags: Mapped[list] = mapped_column(JSON, default=list)  # triage labels: confirmed | false-positive | escalated
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)  # free-text analyst note
     timestamp: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
@@ -214,7 +216,7 @@ class PacketModel(Base):
 
     __tablename__ = "packets"
 
-    id: Mapped[int] = mapped_column(String(32), primary_key=True)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
     capture_id: Mapped[str] = mapped_column(String(32), index=True)
     packet_reference: Mapped[int] = mapped_column(Integer, index=True)  # ordinal in capture
     timestamp: Mapped[float] = mapped_column(Float)
@@ -227,3 +229,17 @@ class PacketModel(Base):
     length: Mapped[int] = mapped_column(Integer, default=0)
     flags: Mapped[list] = mapped_column(JSON, default=list)
     meta: Mapped[dict] = mapped_column("metadata", JSON, default=dict)  # 'metadata' reserved in SQLAlchemy
+
+
+class CaseModel(Base):
+    """An investigation case — groups related captures into one incident."""
+
+    __tablename__ = "cases"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    capture_ids: Mapped[list] = mapped_column(JSON, default=list)  # ordered capture id list
+    status: Mapped[str] = mapped_column(String(32), default="open")  # open | closed
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(default=None)

@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import alerts, captures, engineer, flows, hosts_protocols, jobs, live, timeline_graph
+from app.api import alerts, captures, cases, engineer, flows, hosts_protocols, jobs, live, timeline_graph
 from app.core.config import settings
 from app.core.database import Base, engine
 from app.parsers import register_default_parsers
@@ -15,6 +15,9 @@ from app.parsers import register_default_parsers
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings.ensure_dirs()
+    from app.db.migrate import migrate_if_sqlite
+
+    migrate_if_sqlite()  # add columns missing in pre-existing local DBs
     Base.metadata.create_all(bind=engine)
     register_default_parsers()
     yield
@@ -44,6 +47,7 @@ app.include_router(alerts.router)
 app.include_router(timeline_graph.router)
 app.include_router(engineer.router)
 app.include_router(live.router)
+app.include_router(cases.router)
 
 
 @app.get("/api/health")

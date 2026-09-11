@@ -231,8 +231,38 @@ class AlertOut(BaseModel):
     related_packet_refs: list[int] = Field(default_factory=list)
     explanation: str | None = None
     acknowledged: bool
+    tags: list[str] = Field(default_factory=list)
+    note: str | None = None
     timestamp: float | None = None
     created_at: datetime
+
+
+class CaseOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    description: str | None = None
+    capture_ids: list[str] = Field(default_factory=list)
+    status: str
+    created_at: datetime
+    updated_at: datetime | None = None
+
+
+class CaseDetailOut(CaseOut):
+    """Case with its captures and aggregated stats resolved."""
+
+    captures: list[CaptureOut] = Field(default_factory=list)
+    stats: dict[str, Any] = Field(default_factory=dict)
+
+
+class CaseCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=4000)
+
+
+class CaseCaptureBody(BaseModel):
+    capture_id: str
 
 
 class TimelineEventOut(BaseModel):

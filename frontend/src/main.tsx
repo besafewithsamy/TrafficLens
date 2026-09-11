@@ -24,6 +24,9 @@ const ProtocolPage = lazy(() =>
 const AlertsPage = lazy(() =>
   import('./pages/AlertsPage').then((m) => ({ default: m.AlertsPage })),
 )
+const CasesPage = lazy(() =>
+  import('./pages/CasesPage').then((m) => ({ default: m.CasesPage })),
+)
 const TimelinePage = lazy(() =>
   import('./pages/TimelinePage').then((m) => ({ default: m.TimelinePage })),
 )
@@ -61,6 +64,7 @@ const router = createBrowserRouter([
       { path: '/hosts', element: <HostsPage /> },
       { path: '/protocol', element: <ProtocolPage /> },
       { path: '/alerts', element: <AlertsPage /> },
+      { path: '/cases', element: <CasesPage /> },
       { path: '/timeline', element: <TimelinePage /> },
       { path: '/graph', element: <GraphPage /> },
       { path: '/replay', element: <ReplayPage /> },

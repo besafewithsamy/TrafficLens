@@ -58,3 +58,37 @@ def acknowledge_alert(alert_id: str, body: AckBody, db: Session = Depends(get_db
     if alert is None:
         raise HTTPException(404, "Alert not found")
     return alert
+
+
+class TriageBody(BaseModel):
+    """Partial triage update — only provided fields change."""
+    acknowledged: bool | None = None
+    tags: list[str] | None = None
+    note: str | None = None
+
+
+ALLOWED_TAGS = {"confirmed", "false-positive", "escalated"}
+
+
+@router.patch("/{alert_id}", response_model=AlertOut)
+def update_alert(alert_id: str, body: TriageBody, db: Session = Depends(get_db)):
+    """Triage update: acknowledge, tag (confirmed/false-positive/escalated), or note."""
+    repo = AlertRepository(db)
+    alert = repo.get(alert_id)
+    if alert is None:
+        raise HTTPException(404, "Alert not found")
+
+    fields: dict = {}
+    if body.acknowledged is not None:
+        fields["acknowledged"] = body.acknowledged
+    if body.tags is not None:
+        bad = [t for t in body.tags if t not in ALLOWED_TAGS]
+        if bad:
+            raise HTTPException(400, f"Unknown tags {bad}; allowed: {sorted(ALLOWED_TAGS)}")
+        fields["tags"] = body.tags
+    if body.note is not None:
+        fields["note"] = body.note or None
+
+    if fields:
+        alert = repo.update(alert, **fields)
+    return alert

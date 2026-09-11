@@ -74,6 +74,15 @@ It also provides:
 * Incident replay
 * Flow and packet drill-down
 
+### Cases & Investigation Workflow
+
+* Group related captures into a **case** — one incident, one story
+* Merged chronological timeline across every capture in the case
+* Case-level statistics: total packets, alerts, correlated incidents
+* One-click **HTML investigation report** (printable to PDF) with alerts, reasons, evidence, incidents, and timeline highlights
+* Alert triage: tag as `confirmed`, `false-positive`, or `escalated`, add analyst notes, and filter out triaged alerts
+* Alert → flow deep links that jump straight to the packet evidence
+
 ### Network Engineering
 
 TrafficLens is not limited to security investigations. It also provides network health information including:
@@ -266,8 +275,6 @@ The recorded traffic is saved as a PCAP and flows through the exact same analysi
 
 * Real-time streaming analysis of live captures
 * PCAP analysis caching
-* Multi-PCAP investigations
-* Investigation and report export
 * Additional protocol parsers
 
 ## Current Status

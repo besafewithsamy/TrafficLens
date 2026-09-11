@@ -1,6 +1,8 @@
 import type {
   Alert,
   Capture,
+  Case,
+  CaseDetail,
   DNSTransaction,
   EngineerMetrics,
   Flow,
@@ -166,6 +168,61 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ acknowledged }),
     }),
+
+  // Triage (Phase 5): partial update — tags/note/acknowledged
+  triageAlert: (
+    id: string,
+    body: { acknowledged?: boolean; tags?: string[]; note?: string },
+  ) =>
+    request<Alert>(`/alerts/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+
+  // Cases (Phase 5)
+  listCases: () => request<Case[]>('/cases'),
+
+  getCase: (id: string) => request<CaseDetail>(`/cases/${id}`),
+
+  createCase: (name: string, description?: string) =>
+    request<CaseDetail>('/cases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description }),
+    }),
+
+  addCaptureToCase: (caseId: string, captureId: string) =>
+    request<CaseDetail>(`/cases/${caseId}/captures`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ capture_id: captureId }),
+    }),
+
+  removeCaptureFromCase: (caseId: string, captureId: string) =>
+    request<CaseDetail>(`/cases/${caseId}/captures/${captureId}`, { method: 'DELETE' }),
+
+  closeCase: (caseId: string) =>
+    request<Case>(`/cases/${caseId}/close`, { method: 'POST' }),
+
+  deleteCase: (caseId: string) =>
+    request<{ detail: string }>(`/cases/${caseId}`, { method: 'DELETE' }),
+
+  caseTimeline: (
+    caseId: string,
+    filters?: { eventType?: string; severity?: string; after?: number; before?: number; limit?: number },
+  ) => {
+    const params = new URLSearchParams()
+    if (filters?.eventType) params.set('event_type', filters.eventType)
+    if (filters?.severity) params.set('severity', filters.severity)
+    if (filters?.after !== undefined) params.set('after', String(filters.after))
+    if (filters?.before !== undefined) params.set('before', String(filters.before))
+    if (filters?.limit !== undefined) params.set('limit', String(filters.limit))
+    return request<TimelineEvent[]>(`/cases/${caseId}/timeline?${params}`)
+  },
+
+  // Report download URL (opens in a new tab; printable to PDF)
+  captureReportUrl: (captureId: string) => `${BASE}/captures/${captureId}/report`,
 
   // Timeline + Graph + Replay (Step 5)
   getTimeline: (
