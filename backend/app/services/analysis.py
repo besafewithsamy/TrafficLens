@@ -103,10 +103,17 @@ class AnalysisService:
             self.captures.update(capture, analysis_progress=95)
             flow_dicts = FlowBuilder().build_from(parsed)
 
-            # Persist flows FIRST so suspicion engine can reference real flow ids
+            # Persist flows FIRST so suspicion engine can reference real flow ids.
+            # create_many builds one model per dict, in order — map the DICT
+            # objects (what rules/timeline hold) to their persisted model ids.
+            # (A previous id(fm)-keyed map never matched: rules look up id() of
+            # the flow dicts, not the models, so every alert fell back to
+            # "flowidx-N" placeholders and evidence deep links were dead.)
             self.flows.delete_for_capture(capture.id)
             flow_models = self.flows.create_many(capture.id, flow_dicts)
-            id_by_flow: dict[int, str] = {id(fm): fm.id for fm in flow_models}
+            id_by_flow: dict[int, str] = {
+                id(fd): fm.id for fd, fm in zip(flow_dicts, flow_models, strict=True)
+            }
 
             # ---- Protocol extraction + host profiling (Step 3) ----
             self.jobs.update(job, stage="protocol_extraction", progress=96)

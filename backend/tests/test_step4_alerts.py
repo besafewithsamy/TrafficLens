@@ -218,3 +218,36 @@ def test_severity_mapping_unit():
     assert _severity_for(50) == "medium"
     assert _severity_for(25) == "low"
     assert _severity_for(10) == "info"
+
+
+def test_alert_flow_evidence_links_are_real_ids(client):
+    """Regression (audit C1): alerts must reference REAL persisted flow ids —
+    never the "flowidx-N" placeholder. The AlertsPage deep link
+    (/flows?flow=<id>) is dead evidence without this."""
+    # port_scan/c2_beacon are flow-driven scenarios; dns_tunneling exercises
+    # the packet-refs-only path (DNS rules legitimately carry no flow ids)
+    for pcap in ("port_scan.pcap", "c2_beacon.pcap", "dns_tunneling.pcap"):
+        capture_id, alerts = _analyze_and_alerts(client, pcap)
+        assert alerts, f"{pcap}: expected alerts"
+
+        flow_ids: set[str] = set()
+        offset = 0
+        while True:
+            body = client.get(
+                f"/api/flows?capture_id={capture_id}&limit=500&offset={offset}"
+            ).json()
+            flow_ids.update(f["id"] for f in body["items"])
+            offset += len(body["items"])
+            if offset >= body["total"] or not body["items"]:
+                break
+
+        flow_alerts = [a for a in alerts if a["related_flow_ids"]]
+        if pcap != "dns_tunneling.pcap":
+            assert flow_alerts, f"{pcap}: no alert carries flow evidence at all"
+        for a in flow_alerts:
+            bad = [r for r in a["related_flow_ids"] if r not in flow_ids]
+            assert not bad, (
+                f"{pcap}/{a['rule_name']}: flow ids {bad[:3]} don't exist — "
+                f"evidence links are broken (flowidx placeholders?)"
+            )
+            assert all(not str(r).startswith("flowidx-") for r in a["related_flow_ids"])
