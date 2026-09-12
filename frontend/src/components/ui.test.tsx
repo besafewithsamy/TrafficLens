@@ -1,0 +1,144 @@
+import { afterEach, describe, expect, it } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  Input,
+  Select,
+  SeverityBadge,
+  SkeletonCard,
+  Spinner,
+  StatusPill,
+} from './ui'
+import { useTheme } from '../hooks/theme'
+
+// jsdom render cleanup between tests
+afterEach(() => cleanup())
+
+describe('Button', () => {
+  it('renders with default variant and type', () => {
+    render(<Button>Save</Button>)
+    const btn = screen.getByRole('button', { name: 'Save' })
+    expect(btn).toBeDefined()
+  })
+
+  it('shows a loading spinner and disables interaction', () => {
+    render(<Button loading>Analyze</Button>)
+    const btn = screen.getByRole('button', { name: 'Analyze' }) as HTMLButtonElement
+    expect(btn.disabled).toBe(true)
+    expect(btn.querySelector('.animate-spin')).not.toBeNull()
+  })
+
+  it('disabled prop disables the button', () => {
+    render(<Button disabled>Hold</Button>)
+    expect((screen.getByRole('button', { name: 'Hold' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+})
+
+describe('StatusPill', () => {
+  it('maps known statuses to tones and capitalizes', () => {
+    render(<StatusPill status="completed" />)
+    expect(screen.getByText('Completed')).toBeDefined()
+  })
+
+  it('falls back to neutral for unknown statuses', () => {
+    render(<StatusPill status="garbage" />)
+    expect(screen.getByText('Garbage')).toBeDefined()
+  })
+})
+
+describe('SeverityBadge', () => {
+  it('renders uppercase severity', () => {
+    render(<SeverityBadge severity="critical" />)
+    expect(screen.getByText('CRITICAL')).toBeDefined()
+  })
+  it('is case-insensitive', () => {
+    render(<SeverityBadge severity="Low" />)
+    expect(screen.getByText('LOW')).toBeDefined()
+  })
+})
+
+describe('Card', () => {
+  it('renders header with title, subtitle and actions', () => {
+    render(
+      <Card>
+        <CardHeader title="Flows" subtitle="Reconstructed conversations" actions={<span data-testid="a">x</span>} />
+      </Card>,
+    )
+    expect(screen.getByText('Flows')).toBeDefined()
+    expect(screen.getByText('Reconstructed conversations')).toBeDefined()
+    expect(screen.getByTestId('a')).toBeDefined()
+  })
+})
+
+describe('Input / Select', () => {
+  it('associates label with field via htmlFor/id', () => {
+    render(
+      <>
+        <Input label="BPF filter" id="bpf" />
+        <Select label="Interface" id="iface">
+          <option>lo</option>
+        </Select>
+      </>,
+    )
+    expect((screen.getByLabelText('BPF filter') as HTMLInputElement).id).toBe('bpf')
+    expect((screen.getByLabelText('Interface') as HTMLSelectElement).id).toBe('iface')
+  })
+})
+
+describe('Spinner / Skeleton', () => {
+  it('spinner is announced to screen readers', () => {
+    render(<Spinner />)
+    expect(screen.getByRole('status')).toBeDefined()
+  })
+  it('skeleton rows are hidden from a11y tree', () => {
+    const { container } = render(<SkeletonCard rows={2} />)
+    expect(container.querySelectorAll('[aria-hidden="true"]').length).toBeGreaterThan(0)
+  })
+})
+
+describe('Badge tone passthrough', () => {
+  it('renders arbitrary tone', () => {
+    render(<Badge tone="info">beta</Badge>)
+    expect(screen.getByText('beta')).toBeDefined()
+  })
+})
+
+describe('useTheme', () => {
+  function Probe() {
+    const { theme, toggle } = useTheme()
+    return (
+      <button onClick={toggle} data-testid="probe">
+        {theme}
+      </button>
+    )
+  }
+
+  it('defaults to dark and toggles to light', () => {
+    document.documentElement.classList.remove('light')
+    render(<Probe />)
+    const probe = screen.getByTestId('probe')
+    expect(probe.textContent).toBe('dark')
+    act(() => {
+      fireEvent.click(probe)
+    })
+    expect(probe.textContent).toBe('light')
+    expect(document.documentElement.classList.contains('light')).toBe(true)
+    // restore for other tests
+    document.documentElement.classList.remove('light')
+    try {
+      localStorage.removeItem('packetsleuth-theme')
+    } catch {
+      /* ignore */
+    }
+  })
+
+  it('picks up pre-applied light class from index.html script', () => {
+    document.documentElement.classList.add('light')
+    render(<Probe />)
+    expect(screen.getByTestId('probe').textContent).toBe('light')
+    document.documentElement.classList.remove('light')
+  })
+})

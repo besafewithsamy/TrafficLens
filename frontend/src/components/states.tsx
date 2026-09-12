@@ -1,17 +1,20 @@
 import { useEffect, useRef } from 'react'
+import { AlertTriangle, ArrowLeft, ArrowRight } from 'lucide-react'
+import { Button, Spinner } from './ui'
 
 /** Error message + retry button for a failed query. */
 export function ErrorState({ message, onRetry }: { message?: string; onRetry?: () => void }) {
   return (
-    <div className="flex items-center justify-center gap-3 rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-red-400">
+    <div
+      className="flex items-center justify-center gap-3 rounded-xl border border-danger/30 bg-danger/5 p-12 text-center text-sm text-danger"
+      role="alert"
+    >
+      <AlertTriangle size={16} aria-hidden />
       {message ?? 'Something went wrong while loading data.'}
       {onRetry && (
-        <button
-          onClick={onRetry}
-          className="rounded-lg bg-slate-800 px-3 py-1 text-xs text-slate-300 ring-1 ring-slate-700 hover:text-slate-100"
-        >
+        <Button size="sm" variant="secondary" onClick={onRetry}>
           Retry
-        </button>
+        </Button>
       )}
     </div>
   )
@@ -20,7 +23,7 @@ export function ErrorState({ message, onRetry }: { message?: string; onRetry?: (
 /** Standard empty-state box. */
 export function EmptyState({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-slate-500">
+    <div className="rounded-xl border border-border bg-surface-2/50 p-12 text-center text-sm text-fg-muted">
       {children}
     </div>
   )
@@ -29,7 +32,8 @@ export function EmptyState({ children }: { children: React.ReactNode }) {
 /** Loading-state box. */
 export function LoadingState({ children }: { children?: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-slate-500">
+    <div className="flex items-center justify-center gap-3 rounded-xl border border-border bg-surface-2/50 p-12 text-center text-sm text-fg-muted">
+      <Spinner />
       {children ?? 'Loading…'}
     </div>
   )
@@ -59,25 +63,25 @@ export function Pagination({
   }, [offset])
 
   return (
-    <div ref={topRef} className="flex items-center justify-between border-t border-slate-800 px-4 py-2.5 text-xs text-slate-400">
+    <div
+      ref={topRef}
+      className="flex items-center justify-between border-t border-border px-4 py-2.5 text-xs text-fg-muted"
+    >
       <span>
         {total.toLocaleString()} records · page {page} of {pageCount}
       </span>
       <div className="flex gap-2">
-        <button
+        <Button
+          size="sm"
+          variant="ghost"
           disabled={!canPrev}
           onClick={() => onPageChange(Math.max(0, offset - limit))}
-          className="rounded-lg px-3 py-1 text-slate-300 ring-1 ring-slate-700 transition hover:text-slate-100 disabled:opacity-40 disabled:hover:text-slate-300"
         >
-          ← Prev
-        </button>
-        <button
-          disabled={!canNext}
-          onClick={() => onPageChange(offset + limit)}
-          className="rounded-lg px-3 py-1 text-slate-300 ring-1 ring-slate-700 transition hover:text-slate-100 disabled:opacity-40 disabled:hover:text-slate-300"
-        >
-          Next →
-        </button>
+          <ArrowLeft size={14} aria-hidden /> Prev
+        </Button>
+        <Button size="sm" variant="ghost" disabled={!canNext} onClick={() => onPageChange(offset + limit)}>
+          Next <ArrowRight size={14} aria-hidden />
+        </Button>
       </div>
     </div>
   )

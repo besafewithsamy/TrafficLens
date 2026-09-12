@@ -1,21 +1,192 @@
 @import "tailwindcss";
 
-:root {
-  color-scheme: dark;
+/* ------------------------------------------------------------------ */
+/* Theme tokens — semantic CSS variables mapped into Tailwind v4       */
+/*                                                                     */
+/* Components use the semantic utilities (bg-surface, text-muted, ...) */
+/* so dark/light theming is a variable swap, not a class sweep.         */
+/* ------------------------------------------------------------------ */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ring: var(--accent-ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
 }
 
-html, body, #root {
+:root {
+  color-scheme: dark;
+
+  /* Dark (default) — slate surfaces, emerald accent */
+  --bg: oklch(0.145 0.02 260);
+  --surface: oklch(0.19 0.02 260);
+  --surface-2: oklch(0.235 0.019 260);
+  --surface-3: oklch(0.275 0.018 260);
+  --border: oklch(0.295 0.017 260);
+  --border-strong: oklch(0.36 0.016 260);
+  --fg: oklch(0.93 0.005 260);
+  --fg-muted: oklch(0.72 0.01 260);
+  --fg-subtle: oklch(0.56 0.012 260);
+  --accent: oklch(0.7 0.14 165);
+  --accent-fg: oklch(0.98 0.01 165);
+  --accent-soft: oklch(0.7 0.14 165 / 0.12);
+  --accent-ring: oklch(0.7 0.14 165 / 0.3);
+  --success: oklch(0.72 0.14 160);
+  --warning: oklch(0.78 0.14 75);
+  --danger: oklch(0.65 0.19 25);
+  --info: oklch(0.7 0.12 240);
+}
+
+:root.light {
+  color-scheme: light;
+
+  /* Light — crisp near-white canvas, cool gray surfaces, emerald accent.
+     Kept deliberately high-contrast (SOC readability): dark slate text on
+     near-white cards, hairline borders, saturated but AA-safe signals. */
+
+  /* Base ramp (cool gray, blue-tinted like the dark theme's slate) */
+  --bg: oklch(0.972 0.003 255);
+  --surface: oklch(0.995 0.001 255);
+  --surface-2: oklch(0.962 0.003 255);
+  --surface-3: oklch(0.925 0.005 255);
+  --border: oklch(0.9 0.005 255);
+  --border-strong: oklch(0.82 0.008 255);
+  --fg: oklch(0.24 0.02 255);
+  --fg-muted: oklch(0.44 0.015 255);
+  --fg-subtle: oklch(0.56 0.012 255);
+
+  /* Accent — same emerald hue as dark mode, darkened for white surfaces
+     (oklch 0.49 keeps AA contrast on card, tint and solid-fill pairs) */
+  --accent: oklch(0.49 0.13 163);
+  --accent-fg: oklch(0.99 0.005 163);
+  --accent-soft: oklch(0.49 0.13 163 / 0.09);
+  --accent-ring: oklch(0.49 0.13 163 / 0.32);
+
+  /* Signals — deepened to stay AA-readable as text on white (incl. tinted pills) */
+  --success: oklch(0.49 0.12 158);
+  --warning: oklch(0.52 0.13 70);
+  --danger: oklch(0.51 0.17 27);
+  --info: oklch(0.52 0.11 244);
+}
+
+/* ------------------------------------------------------------------ */
+/* Light-mode remap of raw palette families used in pre-token pages.    */
+/*                                                                     */
+/* Phase-3 sweep hasn't reached the 12 pages yet — they hardcode       */
+/* bg-slate-900 / text-emerald-300 / ring-sky-500 etc. Tailwind v4      */
+/* compiles those to var(--color-slate-900)…, so redefining the         */
+/* palette entries under :root.light adapts every unswept page with    */
+/* ZERO component changes. Dark mode keeps the stock Tailwind ramp.    */
+/* Sides keyed to the semantic tokens they emulate.                    */
+/* ------------------------------------------------------------------ */
+:root.light {
+  /* slate → cool gray ramp, aligned with the semantic surfaces */
+  --color-slate-950: var(--bg);
+  --color-slate-900: var(--surface);
+  --color-slate-800: var(--surface-2);
+  --color-slate-700: var(--surface-3);
+  --color-slate-600: var(--border-strong);
+  --color-slate-500: var(--fg-subtle);
+  --color-slate-400: var(--fg-muted);
+  --color-slate-300: var(--fg);
+  --color-slate-200: var(--fg);
+  --color-slate-100: var(--fg);
+
+  /* emerald → accent ramp (500 = solid button fill, 300/400 = text/icons) */
+  --color-emerald-500: var(--accent);
+  --color-emerald-400: var(--accent);
+  --color-emerald-300: var(--accent);
+  --color-emerald-100: var(--accent-soft);
+
+  /* sky → info ramp */
+  --color-sky-500: var(--info);
+  --color-sky-400: var(--info);
+  --color-sky-300: var(--info);
+
+  /* red → danger ramp */
+  --color-red-500: var(--danger);
+  --color-red-400: var(--danger);
+  --color-red-300: var(--danger);
+
+  /* amber → warning ramp */
+  --color-amber-500: var(--warning);
+  --color-amber-400: var(--warning);
+  --color-amber-300: var(--warning);
+
+  /* orange → warning (stopped status sits between amber and red) */
+  --color-orange-500: var(--warning);
+  --color-orange-400: var(--warning);
+  --color-orange-300: var(--warning);
+
+  /* violet → info (DNS/protocol accents) */
+  --color-violet-500: var(--info);
+  --color-violet-400: var(--info);
+  --color-violet-300: var(--info);
+}
+
+html,
+body,
+#root {
   height: 100%;
 }
 
 body {
-  @apply bg-slate-950 text-slate-200 antialiased;
+  @apply bg-bg text-fg antialiased;
 }
 
-/* Thin scrollbars for the dashboard aesthetic */
+/* Visible focus for keyboard users (customize) */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Thin scrollbars, theme-aware */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #334155 transparent;
+  scrollbar-color: var(--border-strong) transparent;
 }
-*::-webkit-scrollbar { width: 8px; height: 8px; }
-*::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
+}
+
+/* Skeleton shimmer */
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--surface-2);
+}
+.skeleton-shimmer::after {
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--surface-3) 70%, transparent),
+    transparent
+  );
+  animation: skeleton-shimmer 1.4s infinite;
+  content: "";
+}

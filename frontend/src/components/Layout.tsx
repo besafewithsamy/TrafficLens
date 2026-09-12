@@ -1,5 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import { Toaster } from 'sonner'
 import logo from '../assets/logo.png'
+import { ThemeToggle } from './ThemeToggle'
 
 interface NavItem {
   to: string
@@ -23,12 +25,12 @@ const NAV: NavItem[] = [
 
 export function Layout() {
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-950">
+    <div className="flex h-screen w-screen overflow-hidden bg-bg">
       {/* Persistent sidebar */}
-      <aside className="flex w-56 shrink-0 flex-col border-r border-slate-800 bg-slate-900/60">
+      <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-surface/60">
         <div className="px-5 py-4">
           <img src={logo} alt="PacketSleuth" className="h-10 w-auto object-contain" />
-          <div className="mt-1 text-[10px] uppercase tracking-widest text-slate-500">
+          <div className="mt-1 text-xs uppercase tracking-widest text-fg-subtle">
             Network Intelligence
           </div>
         </div>
@@ -42,8 +44,8 @@ export function Layout() {
               className={({ isActive }) =>
                 `flex items-center rounded-lg px-3 py-2 text-sm transition-colors ${
                   isActive
-                    ? 'bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/25'
-                    : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                    ? 'bg-accent-soft text-accent ring-1 ring-accent-ring'
+                    : 'text-fg-muted hover:bg-surface-2/60 hover:text-fg'
                 }`
               }
             >
@@ -52,8 +54,9 @@ export function Layout() {
           ))}
         </nav>
 
-        <div className="border-t border-slate-800 px-5 py-3 text-[10px] text-slate-600">
-          Packet → Flow → Behavior → Event → Investigation
+        <div className="flex items-center justify-between border-t border-border px-5 py-3 text-xs text-fg-subtle">
+          <span>Packet → Flow → Behavior → Event → Investigation</span>
+          <ThemeToggle />
         </div>
       </aside>
 
@@ -61,6 +64,9 @@ export function Layout() {
       <main className="flex-1 overflow-y-auto">
         <Outlet />
       </main>
+
+      {/* Toast notifications (used by mutation flows) */}
+      <Toaster theme="system" position="bottom-right" richColors closeButton />
     </div>
   )
 }

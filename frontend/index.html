@@ -5,6 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/png" href="/logo2.png" />
     <title>PacketSleuth</title>
+    <script>
+      // Apply saved theme before first paint (no flash of wrong theme)
+      (function () {
+        try {
+          var saved = localStorage.getItem('packetsleuth-theme');
+          var light =
+            saved === 'light' ||
+            (!saved && window.matchMedia('(prefers-color-scheme: light)').matches);
+          if (light) document.documentElement.classList.add('light');
+        } catch (e) {
+          /* storage unavailable — stay dark */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
