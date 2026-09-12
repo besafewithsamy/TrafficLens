@@ -1,69 +1,194 @@
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { Toaster } from 'sonner'
-import logo from '../assets/logo.png'
-import { ThemeToggle } from './ThemeToggle'
+import {
+  Activity,
+  Bell,
+  ChevronsLeft,
+  ChevronsRight,
+  FolderOpen,
+  Gauge,
+  Network,
+  PlayCircle,
+  Radar,
+  ScanSearch,
+  Table2,
+  Users,
+  Waypoints,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { Logo } from './Logo'
+import { Topbar, APP_VERSION } from './Topbar'
 
 interface NavItem {
   to: string
   label: string
+  icon: LucideIcon
   end?: boolean
 }
 
-const NAV: NavItem[] = [
-  { to: '/', label: 'Dashboard', end: true },
-  { to: '/capture', label: 'Capture' },
-  { to: '/flows', label: 'Flows' },
-  { to: '/hosts', label: 'Hosts' },
-  { to: '/protocol', label: 'Protocol' },
-  { to: '/timeline', label: 'Timeline' },
-  { to: '/graph', label: 'Graph' },
-  { to: '/alerts', label: 'Alerts' },
-  { to: '/cases', label: 'Cases' },
-  { to: '/replay', label: 'Replay' },
-  { to: '/engineer', label: 'Engineer Mode' },
+interface NavGroup {
+  label: string
+  items: NavItem[]
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: 'Overview',
+    items: [{ to: '/', label: 'Dashboard', icon: Gauge, end: true }],
+  },
+  {
+    label: 'Analyze',
+    items: [
+      { to: '/capture', label: 'Capture', icon: Radar },
+      { to: '/flows', label: 'Flows', icon: Table2 },
+      { to: '/hosts', label: 'Hosts', icon: Users },
+      { to: '/protocol', label: 'Protocol', icon: Activity },
+    ],
+  },
+  {
+    label: 'Investigate',
+    items: [
+      { to: '/alerts', label: 'Alerts', icon: Bell },
+      { to: '/cases', label: 'Cases', icon: FolderOpen },
+      { to: '/timeline', label: 'Timeline', icon: PlayCircle },
+      { to: '/graph', label: 'Graph', icon: Network },
+      { to: '/replay', label: 'Replay', icon: Waypoints },
+    ],
+  },
+  {
+    label: 'System',
+    items: [{ to: '/engineer', label: 'Engineer Mode', icon: ScanSearch }],
+  },
 ]
 
+const STORAGE_KEY = 'packetsleuth-sidebar-collapsed'
+
+function readInitialCollapsed(): boolean {
+  try {
+    return localStorage.getItem(STORAGE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
 export function Layout() {
+  const [collapsed, setCollapsed] = useState(readInitialCollapsed)
+
+  // persist + '[' keyboard shortcut
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, collapsed ? '1' : '0')
+    } catch {
+      /* storage unavailable */
+    }
+  }, [collapsed])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === '[' && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLSelectElement)) {
+        setCollapsed((c) => !c)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-bg">
-      {/* Persistent sidebar */}
-      <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-surface/60">
-        <div className="px-5 py-4">
-          <img src={logo} alt="PacketSleuth" className="h-10 w-auto object-contain" />
-          <div className="mt-1 text-xs uppercase tracking-widest text-fg-subtle">
-            Network Intelligence
-          </div>
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[60] focus:rounded-lg focus:bg-accent focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-accent-fg"
+      >
+        Skip to content
+      </a>
+
+      {/* Sidebar */}
+      <aside
+        className={`flex shrink-0 flex-col border-r border-border bg-surface/60 transition-[width] duration-200 motion-reduce:transition-none ${
+          collapsed ? 'w-[68px]' : 'w-56'
+        }`}
+      >
+        <div className="flex h-14 items-center border-b border-border px-4">
+          <NavLink to="/" aria-label="PacketSleuth home" className="flex items-center overflow-hidden">
+            {collapsed ? (
+              <Logo size={26} withWordmark={false} />
+            ) : (
+              <Logo size={26} />
+            )}
+          </NavLink>
         </div>
 
-        <nav className="mt-2 flex-1 space-y-1 px-3">
-          {NAV.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) =>
-                `flex items-center rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive
-                    ? 'bg-accent-soft text-accent ring-1 ring-accent-ring'
-                    : 'text-fg-muted hover:bg-surface-2/60 hover:text-fg'
-                }`
-              }
-            >
-              {item.label}
-            </NavLink>
+        <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Main navigation">
+          {NAV_GROUPS.map((group) => (
+            <div key={group.label} className="mb-4 last:mb-0">
+              <div
+                className={`mb-1.5 px-2.5 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle ${
+                  collapsed ? 'sr-only' : ''
+                }`}
+              >
+                {group.label}
+              </div>
+              <ul className="space-y-1">
+                {group.items.map((item) => (
+                  <li key={item.to}>
+                    <NavLink
+                      to={item.to}
+                      end={item.end}
+                      title={collapsed ? item.label : undefined}
+                      className={({ isActive }) =>
+                        `group flex items-center rounded-lg px-2.5 py-2 text-sm transition-colors ${
+                          isActive
+                            ? 'bg-accent-soft text-accent ring-1 ring-accent-ring'
+                            : 'text-fg-muted hover:bg-surface-2/60 hover:text-fg'
+                        } ${collapsed ? 'justify-center' : ''}`
+                      }
+                    >
+                      <item.icon size={16} className="shrink-0" aria-hidden />
+                      <span className={`ml-2.5 truncate ${collapsed ? 'sr-only' : ''}`}>{item.label}</span>
+                    </NavLink>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ))}
         </nav>
 
-        <div className="flex items-center justify-between border-t border-border px-5 py-3 text-xs text-fg-subtle">
-          <span>Packet → Flow → Behavior → Event → Investigation</span>
-          <ThemeToggle />
+        <div className="flex items-center justify-between border-t border-border px-3 py-3">
+          {collapsed ? (
+            <button
+              type="button"
+              onClick={() => setCollapsed(false)}
+              aria-label="Expand sidebar"
+              aria-keyshortcuts="["
+              className="mx-auto inline-flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
+            >
+              <ChevronsRight size={16} aria-hidden />
+            </button>
+          ) : (
+            <>
+              <span className="text-xs text-fg-subtle">v{APP_VERSION}</span>
+              <button
+                type="button"
+                onClick={() => setCollapsed(true)}
+                aria-label="Collapse sidebar"
+                aria-keyshortcuts="["
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
+              >
+                <ChevronsLeft size={16} aria-hidden />
+              </button>
+            </>
+          )}
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 overflow-y-auto">
-        <Outlet />
-      </main>
+      {/* Main column: topbar + page */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Topbar />
+        <main id="main-content" className="flex-1 overflow-y-auto">
+          <Outlet />
+        </main>
+      </div>
 
       {/* Toast notifications (used by mutation flows) */}
       <Toaster theme="system" position="bottom-right" richColors closeButton />

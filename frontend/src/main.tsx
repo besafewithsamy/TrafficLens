@@ -5,6 +5,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import './index.css'
 import { Layout } from './components/Layout'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { Spinner } from './components/ui'
 import { Dashboard } from './pages/Dashboard'
 import { NotFoundPage } from './pages/NotFoundPage'
 
@@ -48,8 +49,8 @@ const queryClient = new QueryClient({
 
 function PageFallback() {
   return (
-    <div className="flex h-full items-center justify-center p-16 text-sm text-slate-500">
-      Loading…
+    <div className="flex h-full min-h-[60vh] items-center justify-center p-16">
+      <Spinner size={28} />
     </div>
   )
 }
