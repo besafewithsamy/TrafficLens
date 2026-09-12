@@ -168,3 +168,34 @@ def test_report_clean_capture(client):
     capture_id = _analyze(client, "normal_traffic.pcap")
     body = client.get(f"/api/captures/{capture_id}/report").text
     assert "No alerts were raised" in body
+
+
+def test_case_incidents_counted_once_per_capture(client):
+    """Regression: incidents were extended once per ALERT inside the loop —
+    a capture with 3 alerts and 2 incidents reported 6 before dedupe."""
+    cap = _analyze(client, "c2_beacon.pcap")
+    assert cap
+
+    case = client.post("/api/cases", json={"name": "Incident count case"}).json()
+    cid = case["id"]
+    client.post(f"/api/cases/{cid}/captures", json={"capture_id": cap})
+
+    detail = client.get(f"/api/cases/{cid}").json()
+
+    # capture-level incidents, straight from the analysis summary
+    from app.core.database import SessionLocal
+    from app.db.orm import CaptureModel
+
+    db = SessionLocal()
+    try:
+        capture = db.get(CaptureModel, cap)
+        summary_incidents = (capture.summary or {}).get("incidents", [])
+    finally:
+        db.close()
+
+    reported = detail["stats"]["incidents"]
+    # the case must report each incident once (dedupe key = source+rules;
+    # distinct incidents from ONE capture must all survive)
+    assert len(reported) == len(summary_incidents), (
+        f"expected {len(summary_incidents)} incidents, got {len(reported)}"
+    )

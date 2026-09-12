@@ -52,8 +52,13 @@ class LiveCaptureManager:
         self.state: LiveState | None = None
 
     @staticmethod
-    def _default_sniffer(interface: str, bpf: str | None):
-        return AsyncSniffer(iface=interface, filter=bpf, store=True)
+    def _default_sniffer(interface: str, bpf: str | None, max_packets: int = 0):
+        # count=0 means "no limit" in scapy; a positive count auto-stops the
+        # sniffer once reached, enforcing the packet cap natively.
+        return AsyncSniffer(
+            iface=interface, filter=bpf, store=True,
+            count=max_packets if max_packets and max_packets > 0 else 0,
+        )
 
     # ---------------- introspection ----------------
 
@@ -74,6 +79,15 @@ class LiveCaptureManager:
             if self.state is None:
                 return None
             s = self.state
+            # A dead sniffer thread (permissions dropped mid-run, socket error)
+            # must surface as failed on the next poll — not "running" forever.
+            if s.status == "running" and self._sniffer is not None:
+                exc = self._exception_of(self._sniffer)
+                if exc is not None:
+                    s.status = "failed"
+                    s.error = self._friendly_sniff_error(exc)
+                    self._sniffer = None
+                    self._cancel_watchdog()
             packet_count = self._current_packet_count()
             elapsed = (s.stopped_at or time.time()) - s.started_at
             return {
@@ -99,6 +113,24 @@ class LiveCaptureManager:
 
     # ---------------- lifecycle ----------------
 
+    @staticmethod
+    def _friendly_sniff_error(exc: BaseException) -> str:
+        """Map low-level sniffing failures to actionable messages."""
+        msg = str(exc)
+        if "Operation not permitted" in msg or "Errno 1" in msg or isinstance(exc, PermissionError):
+            return (
+                "Insufficient permissions to sniff — run the backend as root "
+                "or grant CAP_NET_RAW / CAP_NET_ADMIN (e.g. "
+                "sudo setcap cap_net_raw,cap_net_admin=eip $(readlink -f $(which python)))"
+            )
+        return f"Sniffer failed: {msg}"
+
+    @staticmethod
+    def _exception_of(sniffer) -> BaseException | None:
+        """scapy's AsyncSniffer stashes thread-death errors in `.exception`."""
+        exc = getattr(sniffer, "exception", None)
+        return exc if isinstance(exc, BaseException) else None
+
     def start(
         self,
         interface: str,
@@ -116,7 +148,7 @@ class LiveCaptureManager:
                     f"Interface {interface!r} not found on this system"
                 )
 
-            sniffer = self._sniffer_factory(interface, bpf)
+            sniffer = self._sniffer_factory(interface, bpf, max_packets)
             try:
                 sniffer.start()
             except PermissionError:
@@ -126,6 +158,24 @@ class LiveCaptureManager:
                 ) from None
             except Exception as exc:
                 raise LiveCaptureError(f"Could not start sniffer: {exc}") from exc
+
+            # scapy opens the raw socket on the sniffing thread and records a
+            # failure there (e.g. [Errno 1] Operation not permitted) in
+            # `sniffer.exception` WITHOUT raising from start(). Poll briefly
+            # so permission problems fail here with a clear message instead
+            # of "running" for the whole duration and exploding at stop().
+            deadline = time.monotonic() + 0.75
+            while time.monotonic() < deadline:
+                exc = self._exception_of(sniffer)
+                if exc is not None:
+                    raise LiveCaptureError(self._friendly_sniff_error(exc)) from exc
+                if getattr(sniffer, "running", True):
+                    break
+                time.sleep(0.05)
+            else:
+                exc = self._exception_of(sniffer)
+                if exc is not None:
+                    raise LiveCaptureError(self._friendly_sniff_error(exc)) from exc
 
             self._sniffer = sniffer
             self.state = LiveState(
@@ -158,13 +208,28 @@ class LiveCaptureManager:
 
             packets = []
             try:
-                # scapy 2.7.0: stop(join=True) blocks in the socket read until the
-                # next packet arrives — potentially forever on a quiet interface.
-                # Detach first, then bound the thread join to 5s so Stop always
-                # returns. Packets recorded before the detach are still collected.
-                sniffer.stop(join=False)
-                sniffer.join(5)
-                packets = list(getattr(sniffer, "results", None) or [])
+                # The sniffing thread may have died earlier with a stashed
+                # error (permissions, socket failure) — surface it with a
+                # clear message instead of a misleading "stop failed".
+                stashed = self._exception_of(sniffer)
+                if stashed is not None:
+                    packets = list(getattr(sniffer, "results", None) or [])
+                    if not packets:
+                        s.status = "failed"
+                        s.error = self._friendly_sniff_error(stashed)
+                        self._sniffer = None
+                        raise LiveCaptureError(s.error) from stashed
+                    # thread died late — whatever it recorded is still evidence
+                else:
+                    # scapy 2.7.0: stop(join=True) blocks in the socket read until the
+                    # next packet arrives — potentially forever on a quiet interface.
+                    # Detach first, then bound the thread join to 5s so Stop always
+                    # returns. Packets recorded before the detach are still collected.
+                    sniffer.stop(join=False)
+                    sniffer.join(5)
+                    packets = list(getattr(sniffer, "results", None) or [])
+            except LiveCaptureError:
+                raise
             except Exception as exc:
                 # The recording itself may still be salvageable — persist what
                 # we have instead of discarding everything on a stop hiccup.

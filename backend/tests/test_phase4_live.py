@@ -16,6 +16,7 @@ class FakeSniffer:
     """Mimics the real AsyncSniffer (scapy 2.7.0) surface LiveCaptureManager uses:
 
     - count: running packet counter (NOT packet_counter — that attr doesn't exist)
+    - exception: thread-death errors are STASHED here, not raised (scapy behavior)
     - stop(join=True): raises TypeError if called with timeout= (the bug we
       regressed against in the wild); returns the PacketList when join=True
     - join(timeout): bounded thread-join emulation
@@ -26,6 +27,8 @@ class FakeSniffer:
         self.filter = bpf
         self.count = count
         self.results: list = []
+        self.exception: Exception | None = None
+        self.running = False
         self.started = False
         self.stopped = False
         self.start_raises: Exception | None = None
@@ -34,6 +37,7 @@ class FakeSniffer:
         if self.start_raises:
             raise self.start_raises
         self.started = True
+        self.running = True
 
     def stop(self, join: bool = True):
         self.stopped = True
@@ -47,7 +51,7 @@ class FakeSniffer:
 
 def _make_manager(monkeypatch, interfaces=("lo", "eth0"), sniffer=None):
     sniffer = sniffer or FakeSniffer("lo", None)
-    mgr = LiveCaptureManager(sniffer_factory=lambda iface, bpf: sniffer)
+    mgr = LiveCaptureManager(sniffer_factory=lambda iface, bpf, max_packets=0: sniffer)
     monkeypatch.setattr(LiveCaptureManager, "interfaces", staticmethod(lambda: list(interfaces)))
     return mgr, sniffer
 
@@ -161,7 +165,7 @@ def test_live_api_endpoints(monkeypatch, client):
 
     sniffer = FakeSniffer("lo", None)
     fresh_manager = lc_mod.LiveCaptureManager(
-        sniffer_factory=lambda i, b: sniffer
+        sniffer_factory=lambda i, b, max_packets=0: sniffer
     )
     import app.api.live as live_mod
 
@@ -208,6 +212,93 @@ def test_live_api_bad_interface(client):
     resp = client.post("/api/live/start", json={"interface": "doesnotexist0"})
     assert resp.status_code == 400
     assert "not found" in resp.json()["detail"]
+
+
+# ---------------- stashed-exception paths (scapy thread deaths) ----------------
+
+
+def test_start_fails_fast_on_stashed_permission_error(monkeypatch):
+    """The user's bug: socket open fails on the sniffing thread with
+    [Errno 1] Operation not permitted; scapy STASHES it in .exception.
+    start() must fail immediately with the friendly permission message."""
+
+    class DiesAfterStart(FakeSniffer):
+        def start(self) -> None:
+            super().start()
+            # emulate the sniffing thread dying right away (scapy never raises)
+            self.running = True
+            self.exception = OSError(1, "Operation not permitted")
+
+    dying = DiesAfterStart("lo", None)
+    mgr, _ = _make_manager(monkeypatch, sniffer=dying)
+    with pytest.raises(LiveCaptureError, match="Insufficient permissions"):
+        mgr.start("lo")
+    # no state left behind — a failed start must be retryable
+    assert mgr.status() is None or mgr.status()["status"] != "running"
+
+
+def test_status_flips_to_failed_when_sniffer_dies_mid_run(monkeypatch):
+    """Sniffer dies mid-capture → next status() poll reports failed + reason."""
+    sniffer = FakeSniffer("lo", None)
+    mgr, _ = _make_manager(monkeypatch, sniffer=sniffer)
+    mgr.start("lo", max_seconds=600)
+
+    # thread dies mid-capture — scapy stashes the error, sets nothing else
+    sniffer.exception = OSError(1, "Operation not permitted")
+    status = mgr.status()
+    assert status["status"] == "failed"
+    assert "Insufficient permissions" in status["error"]
+    # subsequent stops get the clear message, not "failed to stop sniffer cleanly"
+    with pytest.raises(LiveCaptureError, match="No live capture is running"):
+        mgr.stop()
+
+
+def test_stop_reports_stashed_error_with_clear_message(monkeypatch, app_env):
+    """Stop on a dead sniffer with no packets: clear permission message,
+    not the misleading 'failed to stop sniffer cleanly: [Errno 1]'."""
+
+    class DiesOnStop(FakeSniffer):
+        def stop(self, join: bool = True):
+            # emulate: stop() re-raises the stashed thread exception (scapy
+            # raises self.exception from stop/join when the thread died)
+            raise self.exception  # noqa: TRY001
+
+    dies = DiesOnStop("lo", None)
+    mgr, _ = _make_manager(monkeypatch, sniffer=dies)
+    mgr.start("lo", max_seconds=600)
+    dies.exception = OSError(1, "Operation not permitted")
+
+    with pytest.raises(LiveCaptureError, match="Insufficient permissions"):
+        mgr.stop()
+    assert mgr.status()["status"] == "failed"
+
+
+def test_stop_salvages_packets_from_dead_sniffer(monkeypatch, app_env):
+    """Thread died late in the capture — recorded packets are still evidence:
+    stop() must persist them, not discard the whole recording."""
+    from scapy.all import IP, TCP, Ether
+
+    died = FakeSniffer("lo", None)
+    died.results = [
+        Ether() / IP(src="10.0.0.1", dst="10.0.0.2") / TCP(sport=1, dport=2, flags="S"),
+    ]
+    died.count = 1
+
+    died.stop = lambda join=True: (_ for _ in ()).throw(died.exception)  # type: ignore[method-assign]
+    mgr, _ = _make_manager(monkeypatch, sniffer=died)
+
+    submitted: list = []
+    monkeypatch.setattr(
+        "app.services.jobs.job_manager",
+        type("JM", (), {"submit": staticmethod(lambda *a, **k: submitted.append(a))}),
+    )
+    mgr.start("lo", max_seconds=600)
+    died.exception = OSError(1, "Operation not permitted")
+
+    result = mgr.stop()
+    assert result["state"]["status"] == "stopped"
+    assert result["capture"]["source"] == "live"
+    assert submitted, "salvaged packets must still be analyzed"
 
 
 # ---------------- Real sniffing integration (root only) ----------------
@@ -271,3 +362,43 @@ def test_fake_sniffer_mirrors_real_surface():
     )
     for attr in ("count", "results", "start", "join"):
         assert hasattr(FakeSniffer("lo", None), attr) or attr in FakeSniffer.__dict__
+
+
+def test_start_passes_max_packets_to_sniffer(monkeypatch):
+    """The packet cap must reach the sniffer factory so AsyncSniffer's native
+    count-based auto-stop enforces it (previously only max_seconds worked)."""
+    captured_kwargs: list = []
+
+    def factory(iface, bpf, max_packets=0):
+        captured_kwargs.append((iface, bpf, max_packets))
+        sniffer = FakeSniffer(iface, bpf)
+        return sniffer
+
+    mgr = LiveCaptureManager(sniffer_factory=factory)
+    monkeypatch.setattr(LiveCaptureManager, "interfaces", staticmethod(lambda: ["lo"]))
+    mgr.start("lo", bpf="tcp", max_packets=12345, max_seconds=600)
+    assert captured_kwargs == [("lo", "tcp", 12345)]
+    mgr._cancel_watchdog()
+
+
+def test_default_sniffer_receives_count(monkeypatch):
+    """The real AsyncSniffer must be constructed with count=max_packets.
+
+    The class and the patched global are taken from the SAME module object —
+    conftest purges app.* modules between tests, so patching by string can
+    hit a different (reloaded) module than the one the imported class uses.
+    """
+    from unittest.mock import MagicMock
+
+    import app.services.live_capture as lc
+
+    sniffer_cls = MagicMock()
+    monkeypatch.setattr(lc, "AsyncSniffer", sniffer_cls)
+
+    lc.LiveCaptureManager._default_sniffer("lo", "tcp port 80", 5000)
+    sniffer_cls.assert_called_once_with(iface="lo", filter="tcp port 80", store=True, count=5000)
+
+    sniffer_cls.reset_mock()
+    # zero/None caps mean unlimited
+    lc.LiveCaptureManager._default_sniffer("lo", None, 0)
+    sniffer_cls.assert_called_once_with(iface="lo", filter=None, store=True, count=0)

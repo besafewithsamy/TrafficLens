@@ -179,3 +179,58 @@ def test_scapy_parser_normalization_direct():
     assert pkt.destination_port == 53
     assert "dns.query" in pkt.metadata
     assert not hasattr(pkt, "original")  # scapy internals must not leak
+
+
+def test_upload_rejects_bad_magic_bytes(client):
+    """Correct extension but non-pcap content must be rejected at upload time."""
+    resp = client.post(
+        "/api/captures",
+        files={"file": ("evil.pcap", b"this is not a pcap file", "application/octet-stream")},
+    )
+    assert resp.status_code == 400
+    assert "magic" in resp.json()["detail"]
+
+
+def test_upload_rejects_empty_file(client):
+    resp = client.post(
+        "/api/captures",
+        files={"file": ("empty.pcap", b"", "application/octet-stream")},
+    )
+    assert resp.status_code == 400
+
+
+def test_upload_accepts_all_pcap_magics(client):
+    """little/big-endian pcap and pcapng magic bytes all pass the content check."""
+    import io
+    from pathlib import Path
+
+    for magic in (b"\xd4\xc3\xb2\xa1", b"\xa1\xb2\xc3\xd4", b"\x0a\x0d\x0d\x0a"):
+        body = magic + b"\x00" * 32
+        resp = client.post(
+            "/api/captures",
+            files={"file": (f"m_{magic.hex()}.pcap", io.BytesIO(body), "application/octet-stream")},
+        )
+        assert resp.status_code == 201, f"magic {magic.hex()} rejected"
+        stored = resp.json().get("stored_path")
+        if stored:
+            Path(stored).unlink(missing_ok=True)
+
+
+def test_upload_size_limit_aborts_early(client, monkeypatch):
+    """Oversized uploads are cut off during streaming — not buffered fully in RAM."""
+    import io
+
+    import app.api.captures as captures_module
+
+    monkeypatch.setattr(captures_module.settings, "max_upload_bytes", 1024)
+    # 3MB of valid-magic data — the stream must abort after the first chunks
+    body = b"\xd4\xc3\xb2\xa1" + b"\x00" * (3 * 1024 * 1024)
+    resp = client.post(
+        "/api/captures",
+        files={"file": ("big.pcap", io.BytesIO(body), "application/octet-stream")},
+    )
+    assert resp.status_code == 413
+    # no truncated leftovers in the upload dir
+    upload_dir = captures_module.settings.upload_dir
+    leftovers = [p for p in upload_dir.iterdir() if p.name.endswith("big.pcap")]
+    assert leftovers == []

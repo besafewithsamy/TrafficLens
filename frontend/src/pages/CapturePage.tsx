@@ -34,16 +34,21 @@ export function CapturePage() {
     },
   })
 
-  // SSE live progress for the running job (falls back to captures polling)
+  // SSE live progress for the running job (falls back to captures polling).
+  // Subscribe ONCE per job id — liveJob changes on every snapshot; depending
+  // on it would tear down and reopen the EventSource for each progress tick.
+  const liveJobId = liveJob?.id ?? null
+  const liveJobActive =
+    !!liveJob && liveJob.status !== 'completed' && liveJob.status !== 'failed'
   useEffect(() => {
-    if (!liveJob || liveJob.status === 'completed' || liveJob.status === 'failed') return
+    if (!liveJobId || !liveJobActive) return
     const unsubscribe = api.streamJob(
-      liveJob.id,
+      liveJobId,
       (job) => setLiveJob(job),
       () => queryClient.invalidateQueries({ queryKey: ['captures'] }),
     )
     return unsubscribe
-  }, [liveJob, queryClient])
+  }, [liveJobId, liveJobActive, queryClient])
 
   // Selected capture status from the shared captures list (post-refresh source of truth)
   const captureRow = captures?.find((c) => c.id === selectedCapture?.id) ?? null

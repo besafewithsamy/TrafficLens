@@ -17,6 +17,10 @@ router = APIRouter(prefix="/api/captures", tags=["captures"])
 
 ALLOWED_EXTENSIONS = {".pcap", ".pcapng", ".cap"}
 
+# libpcap magic bytes: little/big-endian pcap, pcapng
+PCAP_MAGIC = (b"\xd4\xc3\xb2\xa1", b"\xa1\xb2\xc3\xd4", b"\x0a\x0d\x0d\x0a")
+CHUNK_SIZE = 1024 * 1024  # 1MB streaming chunks
+
 
 @router.post("", response_model=CaptureOut, status_code=201)
 async def create_capture(
@@ -30,15 +34,37 @@ async def create_capture(
         raise HTTPException(400, f"Unsupported file type {suffix!r}; allowed: {sorted(ALLOWED_EXTENSIONS)}")
 
     settings.ensure_dirs()
-    data = await file.read()
-    if len(data) > settings.max_upload_bytes:
-        raise HTTPException(413, "File too large")
-
     dest = settings.upload_dir / f"{_unique_name(filename)}"
-    dest.write_bytes(data)
+    size = 0
+    first_chunk: bytes | None = None
+    try:
+        with dest.open("wb") as out:
+            while True:
+                chunk = await file.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                if first_chunk is None:
+                    first_chunk = chunk
+                size += len(chunk)
+                if size > settings.max_upload_bytes:
+                    raise HTTPException(413, "File too large")
+                out.write(chunk)
+    except HTTPException:
+        dest.unlink(missing_ok=True)  # don't leave a truncated file behind
+        raise
+    except OSError as exc:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(500, f"Failed to store upload: {exc}") from exc
+
+    if size == 0 or first_chunk is None:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(400, "Empty file")
+    if len(first_chunk) < 4 or first_chunk[:4] not in PCAP_MAGIC:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(400, "Not a valid PCAP/PCAPNG file (bad magic bytes)")
 
     repo = CaptureRepository(db)
-    capture = repo.create(filename=filename, source="upload", size_bytes=len(data))
+    capture = repo.create(filename=filename, source="upload", size_bytes=size)
     capture = repo.update(capture, stored_path=str(dest))
     return capture
 

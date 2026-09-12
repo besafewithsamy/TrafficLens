@@ -59,7 +59,9 @@ def _case_detail(db: Session, case: CaseModel) -> CaseDetailOut:
         for a in alerts:
             sev = a.severity
             stats["alerts_by_severity"][sev] = stats["alerts_by_severity"].get(sev, 0) + 1
-            stats["incidents"].extend(c.summary.get("incidents", []) if c.summary else [])
+        # incidents belong to the capture, not per-alert (extending inside the
+        # alert loop duplicated them once per alert before the dedupe masked it)
+        stats["incidents"].extend(c.summary.get("incidents", []) if c.summary else [])
         events.extend(TimelineRepository(db).list_for_capture(c.id))
 
     # dedupe incidents across captures (same source + rule set)
