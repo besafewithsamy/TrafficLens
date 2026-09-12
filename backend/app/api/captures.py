@@ -104,17 +104,17 @@ def analyze_capture(
     body: AnalyzeRequest | None = None,
     db: Session = Depends(get_db),
 ):
-    """Start background analysis for a capture. Returns the created job (poll /api/jobs/{id})."""
+    """Start background analysis for a capture. Returns the created job (poll /api/jobs/{id}).
+
+    The status transition is an atomic guarded UPDATE — a double-click or UI
+    retry cannot start a second analysis while one is queued/running.
+    """
     capture_repo = CaptureRepository(db)
     capture = capture_repo.get(capture_id)
     if capture is None:
         raise HTTPException(404, "Capture not found")
-    if capture.status in ("analyzing", "queued"):
-        existing = JobRepository(db).running_for_capture(capture_id)
-        if existing:
-            raise HTTPException(409, f"Analysis already running (job {existing.id})")
 
-    # validate requested parser up-front (fail fast, before creating the job)
+    # validate requested parser up-front (fail fast, before claiming)
     requested = body.parser if body else None
     try:
         if requested not in (None, "", "auto"):
@@ -122,13 +122,23 @@ def analyze_capture(
     except Exception as exc:
         raise HTTPException(400, str(exc)) from exc
 
-    stored_path = get_stored_path(db, capture_id)
-    if stored_path is None or not stored_path.exists():
+    if not capture.stored_path or not Path(capture.stored_path).exists():
         raise HTTPException(410, "Uploaded file no longer exists on disk")
 
+    # atomic claim: exactly one concurrent caller transitions to 'queued'
+    capture = capture_repo.claim_for_analysis(capture_id)
+    if capture is None:
+        existing = JobRepository(db).running_for_capture(capture_id)
+        detail = f"Analysis already running (job {existing.id})" if existing else "Analysis already queued"
+        raise HTTPException(409, detail)
+
     job = JobRepository(db).create(capture_id)
-    capture_repo.update(capture, status="queued")
-    job_manager.submit(capture_id, job.id, str(stored_path), requested)
+    try:
+        job_manager.submit(capture_id, job.id, capture.stored_path, requested)
+    except Exception:
+        # revert the claim so the capture isn't stuck in 'queued'
+        capture_repo.update(capture, status="created")
+        raise
     return job
 
 

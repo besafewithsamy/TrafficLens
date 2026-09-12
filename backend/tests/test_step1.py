@@ -234,3 +234,60 @@ def test_upload_size_limit_aborts_early(client, monkeypatch):
     upload_dir = captures_module.settings.upload_dir
     leftovers = [p for p in upload_dir.iterdir() if p.name.endswith("big.pcap")]
     assert leftovers == []
+
+
+def test_concurrent_analyze_single_job(client):
+    """H6 regression: two simultaneous POST /analyze → exactly one 202 + one 409.
+
+    The old check-then-submit let both requests pass the status check before
+    either set 'queued', so two analysis threads interleaved
+    delete_for_capture + create_many → duplicate alert sets.
+    The atomic guarded UPDATE makes the claim exclusive.
+    """
+    import concurrent.futures as cf
+
+    capture_id = _upload(client, "port_scan.pcap")  # alert-producing capture
+
+    def fire(_):
+        return client.post(f"/api/captures/{capture_id}/analyze")
+
+    with cf.ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(fire, range(2)))
+
+    codes = sorted(r.status_code for r in results)
+    assert codes == [202, 409], f"expected one 202 + one 409, got {codes}"
+    conflict = next(r for r in results if r.status_code == 409)
+    assert "already" in conflict.json()["detail"].lower()
+
+    # wait for the winning job, then verify no duplicate alerts
+    from sqlalchemy import func, select
+
+    from app.core.database import SessionLocal
+    from app.db.orm import AlertModel, AnalysisJobModel, CaptureModel
+
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        with SessionLocal() as db:
+            statuses = [
+                j.status for j in db.scalars(
+                    select(AnalysisJobModel).where(AnalysisJobModel.capture_id == capture_id)
+                )
+            ]
+        if statuses and all(s in ("completed", "failed") for s in statuses):
+            break
+        time.sleep(0.1)
+
+    with SessionLocal() as db:
+        capture = db.get(CaptureModel, capture_id)
+        assert capture is not None and capture.status == "completed", capture.status if capture else "?"
+        dupes = db.scalar(
+            select(func.count())
+            .select_from(AlertModel)
+            .where(AlertModel.capture_id == capture_id)
+            .group_by(AlertModel.rule_name, AlertModel.source_ip, AlertModel.destination_ip)
+            .having(func.count() > 1)
+            .limit(1)
+        )
+        assert dupes is None, "duplicate alert rows for (rule, src, dst) — race leaked two runs"
+        total = db.scalar(select(func.count()).select_from(AlertModel).where(AlertModel.capture_id == capture_id))
+    assert total is not None and total > 0

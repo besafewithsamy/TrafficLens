@@ -1,7 +1,7 @@
 """Repository layer — isolates persistence from business logic."""
 from __future__ import annotations
 
-from sqlalchemy import delete, desc, func, select
+from sqlalchemy import delete, desc, func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.database import new_id
@@ -51,6 +51,30 @@ class CaptureRepository:
         self.db.commit()
         self.db.refresh(capture)
         return capture
+
+    def claim_for_analysis(self, capture_id: str) -> CaptureModel | None:
+        """Atomically transition a capture to 'queued' for analysis.
+
+        Single guarded UPDATE — the WHERE clause makes the check-and-set
+        atomic under concurrency, so two simultaneous POST /analyze cannot
+        both win (exactly one row update succeeds). Returns the refreshed
+        capture on success, None if another analysis already claimed it
+        (status 'queued'/'analyzing') or the capture doesn't exist.
+        """
+        stmt = (
+            update(CaptureModel)
+            .where(
+                CaptureModel.id == capture_id,
+                CaptureModel.status.notin_(("queued", "analyzing")),
+            )
+            .values(status="queued")
+        )
+        result = self.db.execute(stmt)
+        self.db.commit()
+        if result.rowcount != 1:
+            self.db.rollback()
+            return None
+        return self.get(capture_id)
 
 
 class FlowRepository:
