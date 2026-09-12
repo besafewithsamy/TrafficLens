@@ -13,17 +13,17 @@ export function QueryState({
   if (query.isLoading) {
     return (
       <StateShell>
-        <div className="animate-pulse text-slate-500">Loading…</div>
+        <div className="animate-pulse text-fg-subtle">Loading…</div>
       </StateShell>
     )
   }
   if (query.isError) {
     return (
       <StateShell>
-        <div className="text-red-400">{String(query.error)}</div>
+        <div className="text-danger">{String(query.error)}</div>
         <button
           onClick={() => query.refetch()}
-          className="mt-3 rounded-lg bg-slate-800 px-4 py-1.5 text-xs text-slate-300 ring-1 ring-slate-700 hover:bg-slate-700"
+          className="mt-3 rounded-lg bg-surface-3 px-4 py-1.5 text-xs text-fg-muted ring-1 ring-border-strong hover:bg-border-strong"
         >
           Retry
         </button>
@@ -41,7 +41,7 @@ export function QueryState({
 
 function StateShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-slate-500">
+    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-border bg-surface-2/50 p-12 text-center text-sm text-fg-subtle">
       {children}
     </div>
   )

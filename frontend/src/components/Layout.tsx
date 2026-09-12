@@ -123,7 +123,7 @@ export function Layout() {
           {NAV_GROUPS.map((group) => (
             <div key={group.label} className="mb-4 last:mb-0">
               <div
-                className={`mb-1.5 px-2.5 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle ${
+                className={`mb-1.5 px-2.5 text-xs font-semibold uppercase tracking-wider text-fg-subtle ${
                   collapsed ? 'sr-only' : ''
                 }`}
               >

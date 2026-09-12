@@ -3,16 +3,17 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { CapturePicker } from '../components/CapturePicker'
 import { Modal } from '../components/Modal'
+import { EvidenceTable } from '../components/EvidenceTable'
 import { EmptyState, ErrorState, Pagination } from '../components/states'
 import { formatTime } from '../components/ui'
 import { useDebouncedValue, useSelectedCapture } from '../hooks/captures'
 import type { TimelineEvent } from '../types/api'
 
 const SEVERITY_DOT: Record<string, string> = {
-  critical: 'bg-red-400',
-  high: 'bg-orange-400',
-  medium: 'bg-amber-400',
-  low: 'bg-sky-400',
+  critical: 'bg-danger',
+  high: 'bg-warning',
+  medium: 'bg-warning',
+  low: 'bg-info',
 }
 
 const PAGE_SIZE = 200
@@ -43,8 +44,8 @@ export function TimelinePage() {
 
   return (
     <div className="p-8">
-      <h1 className="text-2xl font-semibold text-slate-100">Timeline</h1>
-      <p className="mt-1 mb-6 text-sm text-slate-500">
+      <h1 className="text-2xl font-semibold text-fg">Timeline</h1>
+      <p className="mt-1 mb-6 text-sm text-fg-subtle">
         Chronological events — filter to &quot;everything related to X between T1 and T2&quot;.
       </p>
 
@@ -55,13 +56,13 @@ export function TimelinePage() {
           onChange={(e) => { setHost(e.target.value); setOffset(0) }}
           placeholder="host / IP / domain…"
           aria-label="Filter by host"
-          className="w-56 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200 placeholder-slate-600 focus:border-sky-500/50 focus:outline-none"
+          className="w-56 rounded-lg border border-border-strong bg-surface-2/50 px-3 py-1.5 text-fg placeholder-fg-subtle focus:border-info/50 focus:outline-none"
         />
         <select
           value={eventType}
           onChange={(e) => { setEventType(e.target.value); setOffset(0) }}
           aria-label="Filter by event type"
-          className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200"
+          className="rounded-lg border border-border-strong bg-surface-2/50 px-3 py-1.5 text-fg"
         >
           <option value="">all types</option>
           <option value="dns_query">DNS queries</option>
@@ -77,7 +78,7 @@ export function TimelinePage() {
         <select
           value={severity}
           onChange={(e) => setSeverity(e.target.value)}
-          className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200"
+          className="rounded-lg border border-border-strong bg-surface-2/50 px-3 py-1.5 text-fg"
         >
           <option value="">any severity</option>
           <option value="critical">critical</option>
@@ -87,11 +88,11 @@ export function TimelinePage() {
       </div>
 
       {!analyzed.length ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-slate-500">
+        <div className="rounded-xl border border-border bg-surface-2/50 p-12 text-center text-sm text-fg-subtle">
           No analyzed captures yet.
         </div>
       ) : isLoading ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-slate-500">
+        <div className="rounded-xl border border-border bg-surface-2/50 p-12 text-center text-sm text-fg-subtle">
           Building timeline…
         </div>
       ) : isError ? (
@@ -99,8 +100,8 @@ export function TimelinePage() {
       ) : !events.length ? (
         <EmptyState>No events match the current filters.</EmptyState>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
-          <div className="border-b border-slate-800 px-4 py-3 text-sm text-slate-400">
+        <div className="overflow-hidden rounded-xl border border-border bg-surface-2/50">
+          <div className="border-b border-border px-4 py-3 text-sm text-fg-muted">
             {(page?.total ?? 0).toLocaleString()} events
           </div>
           <EventList events={events} onSelect={setSelected} />
@@ -134,20 +135,20 @@ function EventList({
           <button
             key={e.id}
             onClick={() => onSelect(e)}
-            className="flex w-full items-center gap-3 border-t border-slate-800/60 px-4 py-2 text-left hover:bg-slate-800/30"
+            className="flex w-full items-center gap-3 border-t border-border/60 px-4 py-2 text-left hover:bg-surface-3/30"
           >
-            <span className="w-16 shrink-0 font-mono text-xs text-slate-500">
+            <span className="w-16 shrink-0 font-mono text-xs text-fg-subtle">
               {formatTime(e.timestamp)}
             </span>
-            <span className="min-w-0 flex-1 truncate text-sm text-slate-300">{e.label}</span>
+            <span className="min-w-0 flex-1 truncate text-sm text-fg-muted">{e.label}</span>
             {e.severity && (
               <span
-                className={`h-1.5 w-1.5 shrink-0 rounded-full ${SEVERITY_DOT[e.severity] ?? 'bg-slate-500'}`}
+                className={`h-1.5 w-1.5 shrink-0 rounded-full ${SEVERITY_DOT[e.severity] ?? 'bg-fg-subtle'}`}
                 title={e.severity}
               />
             )}
             {e.protocol && (
-              <span className="shrink-0 rounded bg-slate-800/60 px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
+              <span className="shrink-0 rounded bg-surface-3/60 px-1.5 py-0.5 font-mono text-xs text-fg-subtle">
                 {e.protocol}
               </span>
             )}
@@ -193,20 +194,20 @@ function EventDetailModal({
           </div>
 
           <div>
-            <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-slate-500">
+            <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-fg-subtle">
               Detail
             </div>
-            <pre className="overflow-auto rounded-lg bg-slate-950/60 p-3 font-mono text-xs text-slate-400 ring-1 ring-slate-800">
-              {JSON.stringify(event.detail, null, 2)}
-            </pre>
+            <div className="overflow-auto rounded-lg bg-bg/60 p-3 ring-1 ring-border">
+              <EvidenceTable data={event.detail} />
+            </div>
           </div>
 
           {flow && (
             <div>
-              <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-slate-500">
+              <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-fg-subtle">
                 Related flow evidence
               </div>
-              <div className="rounded-lg bg-slate-950/60 p-3 font-mono text-xs text-slate-400 ring-1 ring-slate-800">
+              <div className="rounded-lg bg-bg/60 p-3 font-mono text-xs text-fg-muted ring-1 ring-border">
                 {flow.source_ip}:{flow.source_port} → {flow.destination_ip}:{flow.destination_port}{' '}
                 {flow.transport_protocol}
                 {' · '}
@@ -222,8 +223,8 @@ function EventDetailModal({
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
-      <div className="mt-0.5 font-mono text-slate-300">{value}</div>
+      <div className="text-xs uppercase tracking-wider text-fg-subtle">{label}</div>
+      <div className="mt-0.5 font-mono text-fg-muted">{value}</div>
     </div>
   )
 }

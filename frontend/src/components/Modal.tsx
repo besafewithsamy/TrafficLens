@@ -1,6 +1,7 @@
-import { useEffect } from 'react'
+import { X } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 
-/** Shared modal shell: backdrop, Escape to close, stopPropagation. */
+/** Shared modal shell: backdrop, Escape to close, stopPropagation, focus trap. */
 export function Modal({
   title,
   subtitle,
@@ -14,12 +15,45 @@ export function Modal({
   children: React.ReactNode
   wide?: boolean
 }) {
+  const panelRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null
+
+    // move focus into the dialog when it opens
+    const panel = panelRef.current
+    if (panel) {
+      const focusables = getFocusable(panel)
+      ;(focusables[0] ?? panel).focus()
+    }
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') {
+        onClose()
+        return
+      }
+      // focus trap: Tab cycles within the dialog
+      if (e.key === 'Tab' && panelRef.current) {
+        const focusables = getFocusable(panelRef.current)
+        if (!focusables.length) return
+        const first = focusables[0]
+        const last = focusables[focusables.length - 1]
+        const active = document.activeElement
+        if (e.shiftKey && (active === first || !panelRef.current.contains(active))) {
+          e.preventDefault()
+          last.focus()
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      // restore focus to the element that opened the dialog
+      previouslyFocused?.focus?.()
+    }
   }, [onClose])
 
   return (
@@ -30,22 +64,33 @@ export function Modal({
       aria-modal="true"
     >
       <div
+        ref={panelRef}
+        tabIndex={-1}
         className={`max-h-[85vh] w-full ${
           wide ? 'max-w-4xl' : 'max-w-2xl'
-        } overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl`}
+        } overflow-hidden rounded-xl border border-border-strong bg-surface-2/50 shadow-2xl focus:outline-none`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <div>
-            <div className="font-medium text-slate-200">{title}</div>
-            {subtitle && <div className="mt-0.5 text-xs text-slate-500">{subtitle}</div>}
+            <div className="font-medium text-fg">{title}</div>
+            {subtitle && <div className="mt-0.5 text-xs text-fg-subtle">{subtitle}</div>}
           </div>
-          <button onClick={onClose} aria-label="Close" className="text-slate-500 hover:text-slate-300">
-            ×
+          <button onClick={onClose} aria-label="Close" className="text-fg-subtle hover:text-fg-muted">
+            <X size={18} aria-hidden />
           </button>
         </div>
         <div className="max-h-[70vh] overflow-y-auto">{children}</div>
       </div>
     </div>
+  )
+}
+
+function getFocusable(root: HTMLElement): HTMLElement[] {
+  const sel = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+  return Array.from(root.querySelectorAll<HTMLElement>(sel)).filter(
+    // jsdom has no layout — offsetParent is always null there; treat
+    // elements without explicit display:none as focusable.
+    (el) => el.offsetParent !== null || !el.hidden,
   )
 }

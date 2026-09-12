@@ -15,7 +15,7 @@ export function CapturePicker({
       aria-label="Select capture"
       value={value ?? ''}
       onChange={(e) => onChange(e.target.value || null)}
-      className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200"
+      className="rounded-lg border border-border-strong bg-surface-2/50 px-3 py-1.5 text-fg"
     >
       {captures.map((c) => (
         <option key={c.id} value={c.id}>

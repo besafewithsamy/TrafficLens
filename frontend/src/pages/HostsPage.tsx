@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { CapturePicker } from '../components/CapturePicker'
@@ -20,8 +21,8 @@ export function HostsPage() {
 
   return (
     <div className="p-8">
-      <h1 className="text-2xl font-semibold text-slate-100">Hosts</h1>
-      <p className="mt-1 mb-6 text-sm text-slate-500">
+      <h1 className="text-2xl font-semibold text-fg">Hosts</h1>
+      <p className="mt-1 mb-6 text-sm text-fg-subtle">
         Host-centric investigation — every host with its services, peers, and behavior.
       </p>
 
@@ -37,8 +38,8 @@ export function HostsPage() {
             onClick={() => setInternalFilter(v as '' | 'true' | 'false')}
             className={`rounded-lg px-3 py-1.5 ring-1 transition ${
               internalFilter === v
-                ? 'bg-sky-500/10 text-sky-300 ring-sky-500/30'
-                : 'text-slate-400 ring-slate-700 hover:text-slate-200'
+                ? 'bg-info/10 text-info ring-info/30'
+                : 'text-fg-muted ring-border-strong hover:text-fg'
             }`}
           >
             {l}
@@ -51,11 +52,11 @@ export function HostsPage() {
       ) : isLoading ? (
         <EmptyState text="Profiling hosts…" />
       ) : isError ? (
-        <div className="flex flex-col items-center gap-3 rounded-xl border border-red-500/20 bg-red-500/5 p-12">
-          <div className="text-sm text-red-400">{String(error)}</div>
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-danger/20 bg-danger/5 p-12">
+          <div className="text-sm text-danger">{String(error)}</div>
           <button
             onClick={() => refetch()}
-            className="rounded-lg bg-slate-800 px-4 py-1.5 text-xs text-slate-300 ring-1 ring-slate-700 hover:bg-slate-700"
+            className="rounded-lg bg-surface-3 px-4 py-1.5 text-xs text-fg-muted ring-1 ring-border-strong hover:bg-border-strong"
           >
             Retry
           </button>
@@ -80,34 +81,34 @@ function HostCard({ host, onClick }: { host: Host; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 text-left transition hover:border-slate-600 hover:bg-slate-900/70"
+      className="rounded-xl border border-border bg-surface-2/50 p-4 text-left transition hover:border-border-strong hover:bg-surface-3/70"
     >
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <span className="font-mono text-sm font-semibold text-slate-100">{host.ip}</span>
+            <span className="font-mono text-sm font-semibold text-fg">{host.ip}</span>
             <span
-              className={`rounded px-1.5 py-0.5 text-[10px] font-medium ring-1 ${
+              className={`rounded px-1.5 py-0.5 text-xs font-medium ring-1 ${
                 host.is_internal
-                  ? 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/30'
-                  : 'bg-sky-500/10 text-sky-400 ring-sky-500/30'
+                  ? 'bg-accent/10 text-accent ring-accent/30'
+                  : 'bg-info/10 text-info ring-info/30'
               }`}
             >
               {host.is_internal ? 'internal' : 'external'}
             </span>
           </div>
           {host.hostname && (
-            <div className="mt-0.5 text-xs text-slate-500">{host.hostname}</div>
+            <div className="mt-0.5 text-xs text-fg-subtle">{host.hostname}</div>
           )}
         </div>
         {host.role && (
-          <span className="rounded-lg bg-violet-500/10 px-2 py-1 text-[10px] font-medium text-violet-300 ring-1 ring-violet-500/30">
+          <span className="rounded-lg bg-info/10 px-2 py-1 text-xs font-medium text-info ring-1 ring-info/30">
             {host.role}
           </span>
         )}
       </div>
 
-      <div className="mt-3 flex gap-4 text-xs text-slate-400">
+      <div className="mt-3 flex gap-4 text-xs text-fg-muted">
         <span>
           ↑ {formatBytes(host.bytes_sent)} · {host.packets_sent} pkt
         </span>
@@ -120,17 +121,17 @@ function HostCard({ host, onClick }: { host: Host; onClick: () => void }) {
         {host.services.slice(0, 4).map((s) => (
           <span
             key={s.port}
-            className="rounded bg-slate-800/60 px-1.5 py-0.5 font-mono text-[10px] text-slate-300 ring-1 ring-slate-700"
+            className="rounded bg-surface-3/60 px-1.5 py-0.5 font-mono text-xs text-fg-muted ring-1 ring-border-strong"
           >
             {s.port}/{s.service}
           </span>
         ))}
         {host.services.length > 4 && (
-          <span className="text-[10px] text-slate-500">+{host.services.length - 4} more</span>
+          <span className="text-xs text-fg-subtle">+{host.services.length - 4} more</span>
         )}
       </div>
 
-      <div className="mt-3 flex items-center justify-between text-[10px] text-slate-600">
+      <div className="mt-3 flex items-center justify-between text-xs text-fg-subtle">
         <span>{formatTime(host.first_seen)} → {formatTime(host.last_seen)}</span>
         <span>{totalBytes > 0 ? formatBytes(totalBytes) : '—'}</span>
       </div>
@@ -145,20 +146,20 @@ function HostDetailModal({ host, onClose }: { host: Host; onClose: () => void })
       onClick={onClose}
     >
       <div
-        className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 shadow-2xl"
+        className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-border-strong bg-surface-2/50 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="sticky top-0 flex items-center justify-between border-b border-slate-800 bg-slate-900 px-5 py-4">
+        <div className="sticky top-0 flex items-center justify-between border-b border-border bg-surface-2/50 px-5 py-4">
           <div>
-            <div className="font-mono text-lg font-semibold text-slate-100">{host.ip}</div>
-            <div className="text-xs text-slate-500">
+            <div className="font-mono text-lg font-semibold text-fg">{host.ip}</div>
+            <div className="text-xs text-fg-subtle">
               {host.hostname ? `${host.hostname} · ` : ''}
               {host.role ?? 'no role inferred'} · {host.mac ?? 'no MAC'}
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300">
-            ×
+          <button onClick={onClose} aria-label="Close" className="text-fg-subtle hover:text-fg-muted">
+            <X size={18} aria-hidden />
           </button>
         </div>
 
@@ -178,21 +179,21 @@ function HostDetailModal({ host, onClose }: { host: Host; onClose: () => void })
           {(host.contacted.length > 0 || host.services.length > 0) && (
             <div>
               <SectionTitle>Relationships</SectionTitle>
-              <div className="rounded-lg bg-slate-950/60 p-4 font-mono text-xs ring-1 ring-slate-800">
-                <div className="text-slate-200">{host.ip}</div>
+              <div className="rounded-lg bg-bg/60 p-4 font-mono text-xs ring-1 ring-border">
+                <div className="text-fg">{host.ip}</div>
                 {host.services.slice(0, 8).map((s) => (
-                  <div key={s.port} className="ml-2 text-slate-400">
+                  <div key={s.port} className="ml-2 text-fg-muted">
                     ├──{' '}
-                    <span className="text-emerald-400">LISTENS</span> :{s.port}{' '}
-                    <span className="text-slate-500">({s.service})</span>
+                    <span className="text-accent">LISTENS</span> :{s.port}{' '}
+                    <span className="text-fg-subtle">({s.service})</span>
                   </div>
                 ))}
                 {host.contacted.slice(0, 10).map((c, i) => (
-                  <div key={`${c.ip}-${c.port}`} className="ml-2 text-slate-400">
+                  <div key={`${c.ip}-${c.port}`} className="ml-2 text-fg-muted">
                     {i === Math.min(host.contacted.length, 10) - 1 ? '└──' : '├──'}{' '}
-                    <span className="text-sky-400">{c.app_protocol}</span> → {c.ip}
-                    <span className="text-slate-500">:{c.port}</span>{' '}
-                    <span className="text-slate-600">
+                    <span className="text-info">{c.app_protocol}</span> → {c.ip}
+                    <span className="text-fg-subtle">:{c.port}</span>{' '}
+                    <span className="text-fg-subtle">
                       {c.packets} pkt · {formatBytes(c.bytes)}
                     </span>
                   </div>
@@ -212,14 +213,14 @@ function HostDetailModal({ host, onClose }: { host: Host; onClose: () => void })
                   const max = Math.max(...Object.values(host.protocols))
                   return (
                     <div key={proto} className="flex items-center gap-3 text-xs">
-                      <span className="w-20 text-right font-mono text-slate-400">{proto}</span>
-                      <div className="h-2 flex-1 overflow-hidden rounded bg-slate-800">
+                      <span className="w-20 text-right font-mono text-fg-muted">{proto}</span>
+                      <div className="h-2 flex-1 overflow-hidden rounded bg-surface-3">
                         <div
-                          className="h-full rounded bg-sky-500/60"
+                          className="h-full rounded bg-info/60"
                           style={{ width: `${(count / max) * 100}%` }}
                         />
                       </div>
-                      <span className="w-10 text-slate-500">{count}</span>
+                      <span className="w-10 text-fg-subtle">{count}</span>
                     </div>
                   )
                 })}
@@ -233,16 +234,16 @@ function HostDetailModal({ host, onClose }: { host: Host; onClose: () => void })
 
 function MiniStat({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-lg bg-slate-800/40 px-3 py-2 ring-1 ring-slate-800">
-      <div className="text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
-      <div className="mt-0.5 text-sm font-semibold text-slate-200">{value}</div>
+    <div className="rounded-lg bg-surface-3/40 px-3 py-2 ring-1 ring-border">
+      <div className="text-xs uppercase tracking-wider text-fg-subtle">{label}</div>
+      <div className="mt-0.5 text-sm font-semibold text-fg">{value}</div>
     </div>
   )
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">
+    <div className="mb-2 text-xs font-medium uppercase tracking-wider text-fg-subtle">
       {children}
     </div>
   )
@@ -250,7 +251,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 function EmptyState({ text }: { text: string }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-slate-500">
+    <div className="rounded-xl border border-border bg-surface-2/50 p-12 text-center text-sm text-fg-subtle">
       {text}
     </div>
   )

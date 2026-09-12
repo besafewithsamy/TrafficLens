@@ -28,8 +28,8 @@ export function ProtocolPage() {
 
   return (
     <div className="p-8">
-      <h1 className="text-2xl font-semibold text-slate-100">Protocol Explorer</h1>
-      <p className="mt-1 mb-6 text-sm text-slate-500">
+      <h1 className="text-2xl font-semibold text-fg">Protocol Explorer</h1>
+      <p className="mt-1 mb-6 text-sm text-fg-subtle">
         What is each protocol doing — not which fields live in a packet.
       </p>
 
@@ -41,8 +41,8 @@ export function ProtocolPage() {
             onClick={() => setTab(t)}
             className={`rounded-lg px-4 py-1.5 font-medium uppercase tracking-wide ring-1 transition ${
               tab === t
-                ? 'bg-violet-500/10 text-violet-300 ring-violet-500/30'
-                : 'text-slate-400 ring-slate-700 hover:text-slate-200'
+                ? 'bg-info/10 text-info ring-info/30'
+                : 'text-fg-muted ring-border-strong hover:text-fg'
             }`}
           >
             {t}
@@ -120,14 +120,14 @@ function DnsTable({ captureId }: { captureId: string }) {
           onChange={(e) => { setDomain(e.target.value); setOffset(0) }}
           placeholder="filter by domain…"
           aria-label="Filter by domain"
-          className="w-64 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200 placeholder-slate-600 focus:border-violet-500/50 focus:outline-none"
+          className="w-64 rounded-lg border border-border-strong bg-surface-2/50 px-3 py-1.5 text-fg placeholder-fg-subtle focus:border-info/50 focus:outline-none"
         />
         <button
           onClick={() => { setNxdomainOnly(!nxdomainOnly); setOffset(0) }}
           className={`rounded-lg px-3 py-1.5 ring-1 transition ${
             nxdomainOnly
-              ? 'bg-red-500/10 text-red-300 ring-red-500/30'
-              : 'text-slate-400 ring-slate-700 hover:text-slate-200'
+              ? 'bg-danger/10 text-danger ring-danger/30'
+              : 'text-fg-muted ring-border-strong hover:text-fg'
           }`}
         >
           NXDOMAIN only
@@ -151,30 +151,30 @@ function DnsTable({ captureId }: { captureId: string }) {
         }
       >
         {txns.map((t) => (
-          <tr key={t.id} className="border-t border-slate-800/60 hover:bg-slate-800/30">
-            <Td className="font-mono text-xs text-slate-500">{formatTime(t.timestamp)}</Td>
+          <tr key={t.id} className="border-t border-border/60 hover:bg-surface-3/30">
+            <Td className="font-mono text-xs text-fg-subtle">{formatTime(t.timestamp)}</Td>
             <Td className="font-mono text-xs">{t.client_ip}</Td>
-            <Td className="max-w-[280px] truncate font-mono text-xs text-slate-200">
+            <Td className="max-w-[280px] truncate font-mono text-xs text-fg">
               {t.query_name}
             </Td>
-            <Td className="text-xs text-slate-400">{t.query_type === '1' ? 'A' : t.query_type}</Td>
-            <Td className="font-mono text-xs text-emerald-400/80">
+            <Td className="text-xs text-fg-muted">{t.query_type === '1' ? 'A' : t.query_type}</Td>
+            <Td className="font-mono text-xs text-accent/80">
               {t.response_ips.length ? t.response_ips.join(', ') : '—'}
             </Td>
             <Td>
               <span
-                className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                className={`rounded px-1.5 py-0.5 text-xs font-bold ${
                   t.rcode === 0
-                    ? 'bg-emerald-500/10 text-emerald-400'
+                    ? 'bg-accent/10 text-accent'
                     : t.rcode === 3
-                      ? 'bg-red-500/10 text-red-400'
-                      : 'bg-amber-500/10 text-amber-400'
+                      ? 'bg-danger/10 text-danger'
+                      : 'bg-warning/10 text-warning'
                 }`}
               >
                 {t.rcode === 0 ? 'NOERROR' : t.rcode === 3 ? 'NXDOMAIN' : `RC${t.rcode}`}
               </span>
             </Td>
-            <Td className="text-xs text-slate-400">
+            <Td className="text-xs text-fg-muted">
               {t.latency != null ? `${(t.latency * 1000).toFixed(1)} ms` : '—'}
             </Td>
           </tr>
@@ -227,7 +227,7 @@ function HttpTable({ captureId }: { captureId: string }) {
           onChange={(e) => { setHostFilter(e.target.value); setOffset(0) }}
           placeholder="filter by host header…"
           aria-label="Filter by host"
-          className="w-64 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200 placeholder-slate-600 focus:border-violet-500/50 focus:outline-none"
+          className="w-64 rounded-lg border border-border-strong bg-surface-2/50 px-3 py-1.5 text-fg placeholder-fg-subtle focus:border-info/50 focus:outline-none"
         />
       </div>
       <TableShell
@@ -248,28 +248,28 @@ function HttpTable({ captureId }: { captureId: string }) {
         }
       >
         {txns.map((t) => (
-          <tr key={t.id} className="border-t border-slate-800/60 hover:bg-slate-800/30">
-            <Td className="font-mono text-xs text-slate-500">{formatTime(t.timestamp)}</Td>
-            <Td className="text-xs font-bold text-sky-400">{t.method ?? '—'}</Td>
-            <Td className="font-mono text-xs text-slate-200">{t.host ?? '—'}</Td>
-            <Td className="max-w-[160px] truncate font-mono text-xs text-slate-400">
+          <tr key={t.id} className="border-t border-border/60 hover:bg-surface-3/30">
+            <Td className="font-mono text-xs text-fg-subtle">{formatTime(t.timestamp)}</Td>
+            <Td className="text-xs font-bold text-info">{t.method ?? '—'}</Td>
+            <Td className="font-mono text-xs text-fg">{t.host ?? '—'}</Td>
+            <Td className="max-w-[160px] truncate font-mono text-xs text-fg-muted">
               {t.path ?? '—'}
             </Td>
             <Td>
               <span
-                className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                className={`rounded px-1.5 py-0.5 text-xs font-bold ${
                   t.status_code != null && t.status_code < 400
-                    ? 'bg-emerald-500/10 text-emerald-400'
-                    : 'bg-red-500/10 text-red-400'
+                    ? 'bg-accent/10 text-accent'
+                    : 'bg-danger/10 text-danger'
                 }`}
               >
                 {t.status_code ?? '?'}
               </span>
             </Td>
-            <Td className="max-w-[180px] truncate text-xs text-slate-500">
+            <Td className="max-w-[180px] truncate text-xs text-fg-subtle">
               {t.user_agent ?? '—'}
             </Td>
-            <Td className="text-xs text-slate-400">
+            <Td className="text-xs text-fg-muted">
               {formatBytes(t.request_len)} / {formatBytes(t.response_len)}
             </Td>
           </tr>
@@ -302,7 +302,7 @@ function TlsTable({ captureId }: { captureId: string }) {
           onChange={(e) => { setSniFilter(e.target.value); setOffset(0) }}
           placeholder="filter by SNI…"
           aria-label="Filter by SNI"
-          className="w-64 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-200 placeholder-slate-600 focus:border-violet-500/50 focus:outline-none"
+          className="w-64 rounded-lg border border-border-strong bg-surface-2/50 px-3 py-1.5 text-fg placeholder-fg-subtle focus:border-info/50 focus:outline-none"
         />
       </div>
       <TableShell
@@ -323,16 +323,16 @@ function TlsTable({ captureId }: { captureId: string }) {
         }
       >
         {sessions.map((s) => (
-          <tr key={s.id} className="border-t border-slate-800/60 hover:bg-slate-800/30">
-            <Td className="font-mono text-xs text-slate-500">{formatTime(s.first_seen)}</Td>
+          <tr key={s.id} className="border-t border-border/60 hover:bg-surface-3/30">
+            <Td className="font-mono text-xs text-fg-subtle">{formatTime(s.first_seen)}</Td>
             <Td className="font-mono text-xs">{s.client_ip}</Td>
             <Td className="font-mono text-xs">
               {s.server_ip}
-              <span className="text-slate-500">:{s.server_port}</span>
+              <span className="text-fg-subtle">:{s.server_port}</span>
             </Td>
-            <Td className="font-mono text-xs text-violet-300">{s.sni ?? '— (encrypted/no SNI)'}</Td>
-            <Td className="text-xs text-slate-400">{formatBytes(s.bytes)}</Td>
-            <Td className="text-xs text-slate-400">{s.packets}</Td>
+            <Td className="font-mono text-xs text-info">{s.sni ?? '— (encrypted/no SNI)'}</Td>
+            <Td className="text-xs text-fg-muted">{formatBytes(s.bytes)}</Td>
+            <Td className="text-xs text-fg-muted">{s.packets}</Td>
           </tr>
         ))}
       </TableShell>
@@ -352,11 +352,11 @@ function StatBox({
   tone?: 'red' | 'amber'
 }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-      <div className="text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
+    <div className="rounded-xl border border-border bg-surface-2/50 p-4">
+      <div className="text-xs uppercase tracking-wider text-fg-subtle">{label}</div>
       <div
         className={`mt-1 text-xl font-semibold ${
-          tone === 'red' ? 'text-red-400' : tone === 'amber' ? 'text-amber-400' : 'text-slate-100'
+          tone === 'red' ? 'text-danger' : tone === 'amber' ? 'text-warning' : 'text-fg'
         }`}
       >
         {value}
@@ -384,14 +384,14 @@ function TableShell({
 }) {
   const queryClient = useQueryClient()
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
-      <div className="border-b border-slate-800 px-4 py-3 text-sm text-slate-400">
+    <div className="overflow-hidden rounded-xl border border-border bg-surface-2/50">
+      <div className="border-b border-border px-4 py-3 text-sm text-fg-muted">
         {error ? (
-          <span className="flex items-center gap-3 text-red-400">
+          <span className="flex items-center gap-3 text-danger">
             Failed to load records.
             <button
               onClick={onRetry ?? (() => queryClient.invalidateQueries())}
-              className="rounded-lg bg-slate-800 px-3 py-1 text-xs text-slate-300 ring-1 ring-slate-700 hover:text-slate-100"
+              className="rounded-lg bg-surface-3 px-3 py-1 text-xs text-fg-muted ring-1 ring-border-strong hover:text-fg"
             >
               Retry
             </button>
@@ -405,7 +405,7 @@ function TableShell({
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
+            <tr className="text-left text-xs uppercase tracking-wider text-fg-subtle">
               {headers.map((h) => (
                 <th key={h} className="px-4 py-2.5">
                   {h}
@@ -422,7 +422,7 @@ function TableShell({
 }
 
 function Td({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <td className={`px-4 py-2 text-slate-300 ${className}`}>{children}</td>
+  return <td className={`px-4 py-2 text-fg-muted ${className}`}>{children}</td>
 }
 
 export { LoadingState, ErrorState }

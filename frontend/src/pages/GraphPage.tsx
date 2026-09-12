@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import cytoscape, { type Core, type ElementDefinition } from 'cytoscape'
 import fcose from 'cytoscape-fcose'
@@ -300,12 +301,12 @@ export function GraphPage() {
   return (
     <div className="flex h-full flex-col p-8">
       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
-        <h1 className="text-2xl font-semibold text-slate-100">Network Graph</h1>
+        <h1 className="text-2xl font-semibold text-fg">Network Graph</h1>
         {graph && (
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-fg-subtle">
             {graph.stats.host_count} hosts · {graph.stats.domain_count} domains ·{' '}
             {graph.stats.service_count} services · {graph.stats.edge_count} edges
-            <span className="ml-2 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">
+            <span className="ml-2 rounded bg-surface-3 px-1.5 py-0.5 text-xs text-fg-muted">
               {tier}
             </span>
           </span>
@@ -315,12 +316,12 @@ export function GraphPage() {
         </div>
       </div>
 
-      <div className="relative flex-1 overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
+      <div className="relative flex-1 overflow-hidden rounded-xl border border-border bg-bg">
         <div ref={containerRef} className="h-full w-full" />
 
         {/* legend / filters */}
-        <div className="absolute left-3 top-3 space-y-1 rounded-lg bg-slate-900/90 p-3 text-[10px] ring-1 ring-slate-800">
-          <div className="mb-1 font-medium text-slate-400">Edges</div>
+        <div className="absolute left-3 top-3 space-y-1 rounded-lg bg-surface-2/50/90 p-3 text-xs ring-1 ring-border">
+          <div className="mb-1 font-medium text-fg-muted">Edges</div>
           {edgeGroups.map((g) => {
             const active = activeEdgeFilters.has(g.key)
             return (
@@ -328,7 +329,7 @@ export function GraphPage() {
                 key={g.key}
                 onClick={() => toggleEdgeFilter(g.key)}
                 className={`flex items-center gap-2 text-left transition-opacity ${
-                  active ? 'text-slate-500' : 'text-slate-600 opacity-40'
+                  active ? 'text-fg-subtle' : 'text-fg-subtle opacity-40'
                 }`}
               >
                 <span
@@ -336,11 +337,11 @@ export function GraphPage() {
                   style={{ background: g.color, opacity: active ? 1 : 0.3 }}
                 />
                 <span className="flex-1">{g.label}</span>
-                <span className="text-slate-600">{g.count}</span>
+                <span className="text-fg-subtle">{g.count}</span>
               </button>
             )
           })}
-          <div className="mt-2 mb-1 font-medium text-slate-400">Nodes</div>
+          <div className="mt-2 mb-1 font-medium text-fg-muted">Nodes</div>
           {(
             [
               ['host', 'host', '#38bdf8'],
@@ -355,7 +356,7 @@ export function GraphPage() {
                 disabled={type === 'host'}
                 onClick={() => setNodeFilters(toggleInSet(nodeFilters, type))}
                 className={`flex items-center gap-2 text-left transition-opacity ${
-                  active ? 'text-slate-500' : 'text-slate-600 opacity-40'
+                  active ? 'text-fg-subtle' : 'text-fg-subtle opacity-40'
                 }`}
               >
                 <span
@@ -369,12 +370,12 @@ export function GraphPage() {
           {visible.hiddenLeafCount > 0 && (
             <button
               onClick={() => setShowLeaves(true)}
-              className="mt-2 block w-full rounded border border-slate-700 px-1.5 py-1 text-left text-slate-400 hover:border-slate-500 hover:text-slate-300"
+              className="mt-2 block w-full rounded border border-border-strong px-1.5 py-1 text-left text-fg-muted hover:border-fg-subtle hover:text-fg"
             >
               {visible.hiddenLeafCount} leaf domains hidden — show
             </button>
           )}
-          <div className="mt-2 border-t border-slate-800 pt-1.5 text-slate-600">
+          <div className="mt-2 border-t border-border pt-1.5 text-fg-subtle">
             {visible.elements.length > 0
               ? `${visible.elements.length} shown`
               : 'nothing matches filters'}
@@ -382,7 +383,7 @@ export function GraphPage() {
         </div>
 
         {!graph && (
-          <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-500">
+          <div className="absolute inset-0 flex items-center justify-center text-sm text-fg-subtle">
             {isError
               ? 'Failed to build graph. Please try again.'
               : analyzed.length
@@ -398,13 +399,13 @@ export function GraphPage() {
 
         {/* Node detail panel */}
         {selectedNode && (
-          <div className="absolute right-3 top-3 z-10 w-72 rounded-xl border border-slate-700 bg-slate-900/95 p-4 shadow-xl">
+          <div className="absolute right-3 top-3 z-10 w-72 rounded-xl border border-border-strong bg-surface-2/50/95 p-4 shadow-xl">
             <div className="mb-2 flex items-start justify-between">
-              <div className="font-mono text-sm font-semibold text-slate-100">
+              <div className="font-mono text-sm font-semibold text-fg">
                 {selectedNode.id}
               </div>
-              <button onClick={() => setSelectedNode(null)} className="text-slate-500">
-                ×
+              <button onClick={() => setSelectedNode(null)} aria-label="Close" className="text-fg-subtle hover:text-fg-muted">
+                <X size={16} aria-hidden />
               </button>
             </div>
             <div className="space-y-1.5 text-xs">
@@ -469,8 +470,8 @@ function toggleInSet(current: Iterable<string>, name: string): Set<string> {
 function Row({ label, value, tone }: { label: string; value: string; tone?: 'red' }) {
   return (
     <div className="flex justify-between gap-2">
-      <span className="text-slate-500">{label}</span>
-      <span className={`font-mono ${tone === 'red' ? 'text-red-400' : 'text-slate-300'}`}>
+      <span className="text-fg-subtle">{label}</span>
+      <span className={`font-mono ${tone === 'red' ? 'text-danger' : 'text-fg-muted'}`}>
         {value}
       </span>
     </div>

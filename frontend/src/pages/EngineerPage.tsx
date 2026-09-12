@@ -18,16 +18,16 @@ import { useSelectedCapture } from '../hooks/captures'
 import type { EngineerIssue } from '../types/api'
 
 const HEALTH_STYLE: Record<string, { label: string; cls: string }> = {
-  healthy: { label: 'HEALTHY', cls: 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/30' },
-  warning: { label: 'WARNING', cls: 'bg-amber-500/10 text-amber-400 ring-amber-500/30' },
-  degraded: { label: 'DEGRADED', cls: 'bg-red-500/10 text-red-400 ring-red-500/30' },
+  healthy: { label: 'HEALTHY', cls: 'bg-accent/10 text-accent ring-accent/30' },
+  warning: { label: 'WARNING', cls: 'bg-warning/10 text-warning ring-warning/30' },
+  degraded: { label: 'DEGRADED', cls: 'bg-danger/10 text-danger ring-danger/30' },
 }
 
 const ISSUE_SEV: Record<string, string> = {
-  high: 'text-red-400',
-  medium: 'text-amber-400',
-  low: 'text-sky-400',
-  info: 'text-slate-400',
+  high: 'text-danger',
+  medium: 'text-warning',
+  low: 'text-info',
+  info: 'text-fg-muted',
 }
 
 const PROTOCOL_COLORS = [
@@ -48,8 +48,8 @@ export function EngineerPage() {
     <div className="p-8">
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-100">Engineer Mode</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <h1 className="text-2xl font-semibold text-fg">Engineer Mode</h1>
+          <p className="mt-1 text-sm text-fg-subtle">
             Network health — throughput, reliability, latency. Not security.
           </p>
         </div>
@@ -68,42 +68,42 @@ export function EngineerPage() {
       </div>
 
       {!analyzed.length ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-slate-500">
+        <div className="rounded-xl border border-border bg-surface-2/50 p-12 text-center text-sm text-fg-subtle">
           No analyzed captures yet.
         </div>
       ) : isLoading ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-slate-500">
+        <div className="rounded-xl border border-border bg-surface-2/50 p-12 text-center text-sm text-fg-subtle">
           Computing network health…
         </div>
       ) : isError ? (
-        <div className="flex flex-col items-center gap-3 rounded-xl border border-red-500/20 bg-red-500/5 p-12">
-          <div className="text-sm text-red-400">{String(error)}</div>
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-danger/20 bg-danger/5 p-12">
+          <div className="text-sm text-danger">{String(error)}</div>
           <button
             onClick={() => refetch()}
-            className="rounded-lg bg-slate-800 px-4 py-1.5 text-xs text-slate-300 ring-1 ring-slate-700 hover:bg-slate-700"
+            className="rounded-lg bg-surface-3 px-4 py-1.5 text-xs text-fg-muted ring-1 ring-border-strong hover:bg-border-strong"
           >
             Retry
           </button>
         </div>
       ) : !m ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-sm text-slate-500">
+        <div className="rounded-xl border border-border bg-surface-2/50 p-12 text-center text-sm text-fg-subtle">
           No metrics available.
         </div>
       ) : (
         <div className="space-y-6">
           {/* Health issues */}
           {m.issues.length > 0 && (
-            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-              <div className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">
+            <div className="rounded-xl border border-border bg-surface-2/50 p-4">
+              <div className="mb-2 text-xs font-medium uppercase tracking-wider text-fg-subtle">
                 Detected issues
               </div>
               <div className="space-y-1.5">
                 {m.issues.map((i: EngineerIssue, idx) => (
                   <div key={idx} className="flex items-start gap-2 text-sm">
-                    <span className={`font-bold ${ISSUE_SEV[i.severity] ?? 'text-slate-400'}`}>
-                      ●
+                    <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${ISSUE_SEV[i.severity] ?? 'text-fg-muted'}`} aria-hidden>
+                      <span className="block h-full w-full rounded-full bg-current" />
                     </span>
-                    <span className="text-slate-300">{i.detail}</span>
+                    <span className="text-fg-muted">{i.detail}</span>
                   </div>
                 ))}
               </div>
@@ -122,8 +122,8 @@ export function EngineerPage() {
 
           {/* TCP + DNS health */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-              <div className="mb-3 text-xs font-medium uppercase tracking-wider text-slate-500">
+            <div className="rounded-xl border border-border bg-surface-2/50 p-4">
+              <div className="mb-3 text-xs font-medium uppercase tracking-wider text-fg-subtle">
                 TCP reliability
               </div>
               <div className="space-y-2 text-sm">
@@ -160,8 +160,8 @@ export function EngineerPage() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-              <div className="mb-3 text-xs font-medium uppercase tracking-wider text-slate-500">
+            <div className="rounded-xl border border-border bg-surface-2/50 p-4">
+              <div className="mb-3 text-xs font-medium uppercase tracking-wider text-fg-subtle">
                 DNS health
               </div>
               <div className="space-y-2 text-sm">
@@ -181,7 +181,7 @@ export function EngineerPage() {
                   value={`${(m.dns.nxdomain_rate * 100).toFixed(0)}%`}
                   bad={m.dns.nxdomain_rate > 0.3}
                 />
-                <div className="mt-4 border-t border-slate-800 pt-3 text-xs font-medium uppercase tracking-wider text-slate-500">
+                <div className="mt-4 border-t border-border pt-3 text-xs font-medium uppercase tracking-wider text-fg-subtle">
                   MTU
                 </div>
                 <HealthRow
@@ -288,8 +288,8 @@ export function EngineerPage() {
               </ResponsiveContainer>
             </ChartCard>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-              <div className="mb-3 text-xs font-medium uppercase tracking-wider text-slate-500">
+            <div className="rounded-xl border border-border bg-surface-2/50 p-4">
+              <div className="mb-3 text-xs font-medium uppercase tracking-wider text-fg-subtle">
                 Top talkers
               </div>
               <div className="space-y-1.5">
@@ -297,14 +297,14 @@ export function EngineerPage() {
                   const max = m.top_talkers[0]?.sent_bytes || 1
                   return (
                     <div key={t.ip} className="flex items-center gap-3 text-xs">
-                      <span className="w-28 truncate font-mono text-slate-300">{t.ip}</span>
-                      <div className="h-2 flex-1 overflow-hidden rounded bg-slate-800">
+                      <span className="w-28 truncate font-mono text-fg-muted">{t.ip}</span>
+                      <div className="h-2 flex-1 overflow-hidden rounded bg-surface-3">
                         <div
-                          className="h-full rounded bg-sky-500/60"
+                          className="h-full rounded bg-info/60"
                           style={{ width: `${(t.sent_bytes / max) * 100}%` }}
                         />
                       </div>
-                      <span className="w-16 text-right text-slate-500">
+                      <span className="w-16 text-right text-fg-subtle">
                         {formatBytes(t.sent_bytes)}
                       </span>
                     </div>
@@ -321,9 +321,9 @@ export function EngineerPage() {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-      <div className="text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
-      <div className="mt-1 text-xl font-semibold text-slate-100">{value}</div>
+    <div className="rounded-xl border border-border bg-surface-2/50 p-4">
+      <div className="text-xs uppercase tracking-wider text-fg-subtle">{label}</div>
+      <div className="mt-1 text-xl font-semibold text-fg">{value}</div>
     </div>
   )
 }
@@ -331,16 +331,16 @@ function Metric({ label, value }: { label: string; value: string }) {
 function HealthRow({ label, value, bad }: { label: string; value: string; bad: boolean }) {
   return (
     <div className="flex justify-between">
-      <span className="text-slate-400">{label}</span>
-      <span className={`font-mono ${bad ? 'text-red-400' : 'text-slate-200'}`}>{value}</span>
+      <span className="text-fg-muted">{label}</span>
+      <span className={`font-mono ${bad ? 'text-danger' : 'text-fg'}`}>{value}</span>
     </div>
   )
 }
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-      <div className="mb-3 text-xs font-medium uppercase tracking-wider text-slate-500">
+    <div className="rounded-xl border border-border bg-surface-2/50 p-4">
+      <div className="mb-3 text-xs font-medium uppercase tracking-wider text-fg-subtle">
         {title}
       </div>
       {children}

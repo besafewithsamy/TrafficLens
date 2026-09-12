@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Check, ChevronDown, ChevronUp } from 'lucide-react'
+import { EvidenceTable } from '../components/EvidenceTable'
 import { api } from '../api/client'
 import { CapturePicker } from '../components/CapturePicker'
 import { EmptyState, ErrorState, LoadingState } from '../components/states'
@@ -8,11 +10,11 @@ import { useSelectedCapture } from '../hooks/captures'
 import type { Alert } from '../types/api'
 
 const SEVERITY_STYLE: Record<string, { badge: string; bar: string; label: string }> = {
-  critical: { badge: 'bg-red-500/10 text-red-400 ring-red-500/30', bar: 'bg-red-400', label: 'CRITICAL' },
-  high: { badge: 'bg-orange-500/10 text-orange-400 ring-orange-500/30', bar: 'bg-orange-400', label: 'HIGH' },
-  medium: { badge: 'bg-amber-500/10 text-amber-400 ring-amber-500/30', bar: 'bg-amber-400', label: 'MEDIUM' },
-  low: { badge: 'bg-sky-500/10 text-sky-400 ring-sky-500/30', bar: 'bg-sky-400', label: 'LOW' },
-  info: { badge: 'bg-slate-500/10 text-slate-400 ring-slate-500/30', bar: 'bg-slate-400', label: 'INFO' },
+  critical: { badge: 'bg-danger/10 text-danger ring-danger/30', bar: 'bg-danger', label: 'CRITICAL' },
+  high: { badge: 'bg-warning/10 text-warning ring-warning/30', bar: 'bg-warning', label: 'HIGH' },
+  medium: { badge: 'bg-warning/10 text-warning ring-warning/30', bar: 'bg-warning', label: 'MEDIUM' },
+  low: { badge: 'bg-info/10 text-info ring-info/30', bar: 'bg-info', label: 'LOW' },
+  info: { badge: 'bg-fg/10 text-fg-muted ring-fg/20', bar: 'bg-fg-muted', label: 'INFO' },
 }
 
 const RULE_LABELS: Record<string, string> = {
@@ -87,8 +89,8 @@ export function AlertsPage() {
 
   return (
     <div className="p-8">
-      <h1 className="text-2xl font-semibold text-slate-100">Alerts</h1>
-      <p className="mt-1 mb-6 text-sm text-slate-500">
+      <h1 className="text-2xl font-semibold text-fg">Alerts</h1>
+      <p className="mt-1 mb-6 text-sm text-fg-subtle">
         Every alert is explainable — reasons, evidence, and the flows behind it.
       </p>
 
@@ -100,20 +102,20 @@ export function AlertsPage() {
             onClick={() => setSeverity(s)}
             className={`rounded-lg px-3 py-1.5 ring-1 transition ${
               severity === s
-                ? 'bg-red-500/10 text-red-300 ring-red-500/30'
-                : 'text-slate-400 ring-slate-700 hover:text-slate-200'
+                ? 'bg-danger/10 text-danger ring-danger/30'
+                : 'text-fg-muted ring-border hover:text-fg'
             }`}
           >
             {s || 'All'}
             {s && counts[s] ? ` (${counts[s]})` : ''}
           </button>
         ))}
-        <label className="ml-2 flex cursor-pointer items-center gap-1.5 text-xs text-slate-500">
+        <label className="ml-2 flex cursor-pointer items-center gap-1.5 text-xs text-fg-subtle">
           <input
             type="checkbox"
             checked={unconfirmedOnly}
             onChange={(e) => setUnconfirmedOnly(e.target.checked)}
-            className="accent-emerald-500"
+            className="accent-accent"
           />
           hide confirmed & false-positives
         </label>
@@ -122,7 +124,7 @@ export function AlertsPage() {
             href={api.captureReportUrl(effectiveCaptureId)}
             target="_blank"
             rel="noreferrer"
-            className="ml-auto rounded-lg px-3 py-1.5 text-xs font-medium text-sky-300 ring-1 ring-sky-500/30 transition hover:bg-sky-500/10"
+            className="ml-auto rounded-lg px-3 py-1.5 text-xs font-medium text-info ring-1 ring-info/30 transition hover:bg-info/10"
           >
             Download report (HTML/PDF)
           </a>
@@ -132,28 +134,28 @@ export function AlertsPage() {
       {/* Correlated incidents */}
       {incidents.length > 0 && (
         <div className="mb-6 space-y-2">
-          <div className="text-xs font-medium uppercase tracking-wider text-slate-500">
+          <div className="text-xs font-medium uppercase tracking-wider text-fg-subtle">
             Correlated incidents ({incidents.length})
           </div>
           {incidents.map((inc) => (
             <div
               key={`${inc.source_ip}-${inc.first_seen}`}
-              className="rounded-xl border border-red-500/25 bg-red-500/5 px-4 py-3"
+              className="rounded-xl border border-danger/25 bg-danger/5 px-4 py-3"
             >
               <div className="flex flex-wrap items-center gap-3">
                 <span
-                  className={`rounded px-2 py-0.5 text-[10px] font-bold ring-1 ${
+                  className={`rounded px-2 py-0.5 text-xs font-bold ring-1 ${
                     (SEVERITY_STYLE[inc.severity] ?? SEVERITY_STYLE.info).badge
                   }`}
                 >
                   {(SEVERITY_STYLE[inc.severity] ?? SEVERITY_STYLE.info).label}
                 </span>
-                <span className="text-sm font-medium text-slate-200">{inc.title}</span>
-                <span className="ml-auto font-mono text-xs text-slate-500">
+                <span className="text-sm font-medium text-fg">{inc.title}</span>
+                <span className="ml-auto font-mono text-xs text-fg-subtle">
                   {inc.alert_count} alerts · max score {inc.max_score}
                 </span>
               </div>
-              <p className="mt-1.5 text-xs leading-relaxed text-slate-400">{inc.story}</p>
+              <p className="mt-1.5 text-xs leading-relaxed text-fg-muted">{inc.story}</p>
             </div>
           ))}
         </div>
@@ -166,9 +168,9 @@ export function AlertsPage() {
       ) : isError ? (
         <ErrorState message="Failed to load alerts." onRetry={() => refetch()} />
       ) : !alerts.length ? (
-        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-12 text-center">
-          <div className="text-3xl text-emerald-500">✓</div>
-          <p className="mt-2 text-sm text-emerald-300">No alerts matched — traffic looks clean.</p>
+        <div className="rounded-xl border border-accent/20 bg-accent/5 p-12 text-center">
+          <Check size={36} className="mx-auto text-accent" aria-hidden />
+          <p className="mt-2 text-sm text-accent">No alerts matched — traffic looks clean.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -221,16 +223,20 @@ function AlertCard({
 
   return (
     <div
-      className={`overflow-hidden rounded-xl border bg-slate-900/40 transition ${
-        alert.acknowledged ? 'border-slate-800 opacity-60' : 'border-slate-700'
+      className={`overflow-hidden rounded-xl border bg-surface-2/50 transition ${
+        alert.acknowledged ? 'border-border opacity-60' : 'border-border-strong'
       }`}
     >
       {/* Header — always visible */}
-      <button onClick={onToggle} className="flex w-full items-center gap-4 px-5 py-4 text-left">
+      <button
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-4 px-5 py-4 text-left"
+      >
         {/* Score gauge */}
         <div className="relative flex h-12 w-12 shrink-0 items-center justify-center">
           <svg viewBox="0 0 36 36" className="h-12 w-12 -rotate-90">
-            <circle cx="18" cy="18" r="15" fill="none" stroke="#1e293b" strokeWidth="3" />
+            <circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" strokeWidth="3" className="text-surface-3" />
             <circle
               cx="18"
               cy="18"
@@ -239,79 +245,81 @@ function AlertCard({
               stroke="currentColor"
               className={
                 alert.severity === 'critical'
-                  ? 'text-red-400'
+                  ? 'text-danger'
                   : alert.severity === 'high'
-                    ? 'text-orange-400'
+                    ? 'text-warning'
                     : alert.severity === 'medium'
-                      ? 'text-amber-400'
-                      : 'text-sky-400'
+                      ? 'text-warning'
+                      : 'text-info'
               }
               strokeWidth="3"
               strokeDasharray={`${(alert.score / 100) * 94.2} 94.2`}
               strokeLinecap="round"
             />
           </svg>
-          <span className="absolute text-xs font-bold text-slate-200">{alert.score}</span>
+          <span className="absolute text-xs font-bold text-fg">{alert.score}</span>
         </div>
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className={`rounded px-2 py-0.5 text-[10px] font-bold ring-1 ${style.badge}`}>
+            <span className={`rounded px-2 py-0.5 text-xs font-bold ring-1 ${style.badge}`}>
               {style.label}
             </span>
-            <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-medium text-slate-400 ring-1 ring-slate-700">
+            <span className="rounded bg-surface-3 px-2 py-0.5 text-xs font-medium text-fg-muted ring-1 ring-border">
               {RULE_LABELS[alert.rule_name] ?? alert.rule_name}
             </span>
             {alert.acknowledged && (
-              <span className="text-[10px] text-slate-500">acknowledged</span>
+              <span className="text-xs text-fg-subtle">acknowledged</span>
             )}
           </div>
-          <div className="mt-1 truncate text-sm font-medium text-slate-200">{alert.title}</div>
-          <div className="mt-0.5 text-xs text-slate-500">
+          <div className="mt-1 truncate text-sm font-medium text-fg">{alert.title}</div>
+          <div className="mt-0.5 text-xs text-fg-subtle">
             {alert.timestamp != null && formatTime(alert.timestamp)}
             {alert.source_ip && ` · source ${alert.source_ip}`}
           </div>
         </div>
 
-        <span className="shrink-0 text-slate-500">{expanded ? '▲' : '▼'}</span>
+        <span className="shrink-0 text-fg-subtle" aria-hidden>
+          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </span>
       </button>
 
       {/* Expanded evidence */}
       {expanded && (
-        <div className="border-t border-slate-800 bg-slate-950/40 px-5 py-4">
+        <div className="border-t border-border bg-bg/40 px-5 py-4">
           {/* Host / destination */}
           <div className="mb-4 grid grid-cols-3 gap-4 text-sm">
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">Host</div>
-              <div className="mt-0.5 font-mono text-slate-200">{alert.source_ip ?? '—'}</div>
+              <div className="text-xs uppercase tracking-wider text-fg-subtle">Host</div>
+              <div className="mt-0.5 font-mono text-fg">{alert.source_ip ?? '—'}</div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">
+              <div className="text-xs uppercase tracking-wider text-fg-subtle">
                 Destination
               </div>
-              <div className="mt-0.5 font-mono text-slate-200">
+              <div className="mt-0.5 font-mono text-fg">
                 {alert.destination_ip ?? '—'}
                 {alert.destination_port ? `:${alert.destination_port}` : ''}
               </div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">Risk</div>
-              <div className="mt-0.5 font-semibold text-slate-200">{alert.score}/100</div>
+              <div className="text-xs uppercase tracking-wider text-fg-subtle">Risk</div>
+              <div className="mt-0.5 font-semibold text-fg">{alert.score}/100</div>
             </div>
           </div>
 
           {/* Reasons */}
           <div className="mb-4">
-            <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-slate-500">
+            <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-fg-subtle">
               Reasons
             </div>
             <div className="space-y-1">
               {alert.reasons.map((r, i) => (
                 <div key={i} className="flex items-start gap-2 text-sm">
-                  <span className="mt-0.5 text-emerald-400">✓</span>
-                  <span className="text-slate-300">
+                  <Check size={14} className="mt-0.5 shrink-0 text-accent" aria-hidden />
+                  <span className="text-fg">
                     {r.reason}
-                    <span className="ml-2 text-xs text-slate-500">{r.detail}</span>
+                    <span className="ml-2 text-xs text-fg-subtle">{r.detail}</span>
                   </span>
                 </div>
               ))}
@@ -320,17 +328,17 @@ function AlertCard({
 
           {/* Evidence JSON */}
           <div className="mb-4">
-            <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-slate-500">
+            <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-fg-subtle">
               Evidence
             </div>
-            <pre className="max-h-40 overflow-auto rounded-lg bg-slate-900/80 p-3 font-mono text-xs text-slate-400 ring-1 ring-slate-800">
-              {JSON.stringify(alert.evidence, null, 2)}
-            </pre>
+            <div className="max-h-40 overflow-auto rounded-lg bg-surface/80 p-3 ring-1 ring-border">
+              <EvidenceTable data={alert.evidence} />
+            </div>
           </div>
 
           {/* Explanation */}
           {alert.explanation && (
-            <div className="mb-4 rounded-lg border-l-2 border-slate-600 bg-slate-900/60 p-3 text-sm leading-relaxed text-slate-300">
+            <div className="mb-4 rounded-lg border-l-2 border-border-strong bg-surface/60 p-3 text-sm leading-relaxed text-fg">
               {alert.explanation}
             </div>
           )}
@@ -345,10 +353,10 @@ function AlertCard({
               disabled={ackPending}
               className={`rounded-lg px-3 py-1.5 text-xs font-medium ring-1 transition ${
                 ackPending
-                  ? 'cursor-wait bg-slate-800/50 text-slate-500 ring-slate-700'
+                  ? 'cursor-wait bg-surface-3/50 text-fg-subtle ring-border'
                   : alert.acknowledged
-                    ? 'bg-slate-800 text-slate-400 ring-slate-700 hover:text-slate-200'
-                    : 'bg-emerald-500/10 text-emerald-300 ring-emerald-500/30 hover:bg-emerald-500/20'
+                    ? 'bg-surface-3 text-fg-muted ring-border hover:text-fg'
+                    : 'bg-accent/10 text-accent ring-accent/30 hover:bg-accent/20'
               }`}
             >
               {ackPending
@@ -371,11 +379,11 @@ function AlertCard({
                   className={`rounded-lg px-2.5 py-1.5 text-xs ring-1 transition ${
                     active
                       ? tag === 'confirmed'
-                        ? 'bg-emerald-500/10 text-emerald-300 ring-emerald-500/30'
+                        ? 'bg-accent/10 text-accent ring-accent/30'
                         : tag === 'false-positive'
-                          ? 'bg-slate-500/10 text-slate-300 ring-slate-500/30'
-                          : 'bg-red-500/10 text-red-300 ring-red-500/30'
-                      : 'text-slate-500 ring-slate-700 hover:text-slate-300'
+                          ? 'bg-fg/10 text-fg-muted ring-fg/20'
+                          : 'bg-danger/10 text-danger ring-danger/30'
+                      : 'text-fg-subtle ring-border hover:text-fg-muted'
                   }`}
                 >
                   {tag}
@@ -388,7 +396,7 @@ function AlertCard({
               <a
                 href={`/flows?capture_id=${alert.capture_id}&flow=${alert.related_flow_ids[0]}`}
                 onClick={(e) => e.stopPropagation()}
-                className="rounded-lg px-3 py-1.5 text-xs text-sky-400 ring-1 ring-sky-500/30 transition hover:bg-sky-500/10"
+                className="rounded-lg px-3 py-1.5 text-xs text-info ring-1 ring-info/30 transition hover:bg-info/10"
               >
                 {alert.related_flow_ids.length} related flow{alert.related_flow_ids.length > 1 ? 's' : ''} →
                 view evidence
@@ -401,7 +409,7 @@ function AlertCard({
                 e.stopPropagation()
                 setShowNote(!showNote)
               }}
-              className="rounded-lg px-2.5 py-1.5 text-xs text-slate-500 ring-1 ring-slate-700 transition hover:text-slate-300"
+              className="rounded-lg px-2.5 py-1.5 text-xs text-fg-subtle ring-1 ring-border transition hover:text-fg-muted"
             >
               {alert.note ? 'edit note' : '+ note'}
             </button>
@@ -417,7 +425,7 @@ function AlertCard({
                 placeholder="Analyst note — e.g. 'checked with John, this server is legit'"
                 aria-label="Analyst note"
                 rows={2}
-                className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2.5 text-sm text-slate-200 placeholder-slate-600 focus:border-emerald-500/50 focus:outline-none"
+                className="w-full rounded-lg border border-border bg-bg p-2.5 text-sm text-fg placeholder-fg-subtle focus:border-accent/50 focus:outline-none"
               />
               <div className="mt-1.5 flex gap-2">
                 <button
@@ -427,7 +435,7 @@ function AlertCard({
                     setShowNote(false)
                   }}
                   disabled={triagePending}
-                  className="rounded-lg bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300 ring-1 ring-emerald-500/30 hover:bg-emerald-500/20 disabled:opacity-50"
+                  className="rounded-lg bg-accent/10 px-3 py-1 text-xs text-accent ring-1 ring-accent/30 hover:bg-accent/20 disabled:opacity-50"
                 >
                   {triagePending ? 'Saving…' : 'Save note'}
                 </button>
@@ -436,7 +444,7 @@ function AlertCard({
                     e.stopPropagation()
                     setShowNote(false)
                   }}
-                  className="rounded-lg px-3 py-1 text-xs text-slate-400 ring-1 ring-slate-700 hover:text-slate-200"
+                  className="rounded-lg px-3 py-1 text-xs text-fg-muted ring-1 ring-border hover:text-fg"
                 >
                   Cancel
                 </button>
@@ -446,8 +454,8 @@ function AlertCard({
 
           {/* Saved note display */}
           {alert.note && !showNote && (
-            <div className="mt-3 rounded-lg border-l-2 border-emerald-500/50 bg-slate-900/60 p-2.5 text-sm text-slate-300">
-              <span className="text-[10px] uppercase tracking-wider text-slate-500">Note</span>{' '}
+            <div className="mt-3 rounded-lg border-l-2 border-accent/50 bg-surface/60 p-2.5 text-sm text-fg">
+              <span className="text-xs uppercase tracking-wider text-fg-subtle">Note</span>{' '}
               {alert.note}
             </div>
           )}
