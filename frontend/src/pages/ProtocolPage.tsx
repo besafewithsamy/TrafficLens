@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Download } from 'lucide-react'
 import { api } from '../api/client'
 import { CapturePicker } from '../components/CapturePicker'
 import {
@@ -8,7 +9,9 @@ import {
 } from '../components/states'
 import { SkeletonRow, SkeletonStatBox, formatBytes, formatTime } from '../components/ui'
 import { useDebouncedValue, useSelectedCapture } from '../hooks/captures'
-import type { ProtocolStats } from '../types/api'
+import { fetchAllPages, useCsvExport } from '../hooks/useCsvExport'
+import { csvTime } from '../utils/csv'
+import type { DNSTransaction, HTTPTransaction, ProtocolStats, TLSSession } from '../types/api'
 
 type Tab = 'dns' | 'http' | 'tls'
 
@@ -117,6 +120,23 @@ function DnsTable({ captureId }: { captureId: string }) {
 
   const txns = page?.items ?? []
 
+  const dnsExport = useCsvExport<DNSTransaction>({
+    label: 'dns',
+    headers: ['Time', 'Client', 'Query', 'Type', 'Answers', 'RCode', 'Latency (s)'],
+    toRow: (t) => [
+      csvTime(t.timestamp), t.client_ip, t.query_name, t.query_type,
+      t.response_ips, t.rcode, t.latency,
+    ],
+    fetchAll: () =>
+      fetchAllPages((p) =>
+        api.listDns(
+          captureId,
+          { domain: debouncedDomain || undefined, rcode: nxdomainOnly ? 3 : undefined },
+          p,
+        ),
+      ),
+  })
+
   return (
     <div>
       <div className="mb-3 flex items-center gap-3 text-sm">
@@ -137,6 +157,7 @@ function DnsTable({ captureId }: { captureId: string }) {
         >
           NXDOMAIN only
         </button>
+        <ExportButton onClick={dnsExport.export} pending={dnsExport.isExporting} disabled={isLoading} label="dns" />
       </div>
       <TableShell
         count={page?.total ?? 0}
@@ -224,6 +245,20 @@ function HttpTable({ captureId }: { captureId: string }) {
 
   const txns = page?.items ?? []
 
+  const httpExport = useCsvExport<HTTPTransaction>({
+    label: 'http',
+    headers: [
+      'Time', 'Method', 'Host', 'Path', 'Status', 'User Agent',
+      'Request Bytes', 'Response Bytes', 'Client IP', 'Server IP', 'Server Port',
+    ],
+    toRow: (t) => [
+      csvTime(t.timestamp), t.method, t.host, t.path, t.status_code, t.user_agent,
+      t.request_len, t.response_len, t.client_ip, t.server_ip, t.server_port,
+    ],
+    fetchAll: () =>
+      fetchAllPages((p) => api.listHttp(captureId, { host: debouncedHost || undefined }, p)),
+  })
+
   return (
     <div>
       <div className="mb-3 flex items-center gap-3 text-sm">
@@ -234,6 +269,7 @@ function HttpTable({ captureId }: { captureId: string }) {
           aria-label="Filter by host"
           className="w-64 rounded-lg border border-border-strong bg-surface-2/50 px-3 py-1.5 text-fg placeholder-fg-subtle focus:border-info/50 focus:outline-none"
         />
+        <ExportButton onClick={httpExport.export} pending={httpExport.isExporting} disabled={isLoading} label="http" />
       </div>
       <TableShell
         count={page?.total ?? 0}
@@ -299,6 +335,16 @@ function TlsTable({ captureId }: { captureId: string }) {
 
   const sessions = page?.items ?? []
 
+  const tlsExport = useCsvExport<TLSSession>({
+    label: 'tls',
+    headers: ['First Seen', 'Client', 'Server', 'Server Port', 'SNI', 'Version', 'Bytes', 'Packets'],
+    toRow: (s) => [
+      csvTime(s.first_seen), s.client_ip, s.server_ip, s.server_port, s.sni, s.version,
+      s.bytes, s.packets,
+    ],
+    fetchAll: () => fetchAllPages((p) => api.listTls(captureId, { sni: debouncedSni || undefined }, p)),
+  })
+
   return (
     <div>
       <div className="mb-3 flex items-center gap-3 text-sm">
@@ -309,6 +355,7 @@ function TlsTable({ captureId }: { captureId: string }) {
           aria-label="Filter by SNI"
           className="w-64 rounded-lg border border-border-strong bg-surface-2/50 px-3 py-1.5 text-fg placeholder-fg-subtle focus:border-info/50 focus:outline-none"
         />
+        <ExportButton onClick={tlsExport.export} pending={tlsExport.isExporting} disabled={isLoading} label="tls" />
       </div>
       <TableShell
         count={page?.total ?? 0}
@@ -460,4 +507,30 @@ function SkeletonTds({ headers, rows }: { headers: string[]; rows: number }) {
 
 function Td({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return <td className={`px-4 py-2 text-fg-muted ${className}`}>{children}</td>
+}
+
+/** Small accessible CSV export button (shared by DNS/HTTP/TLS tables). */
+function ExportButton({
+  onClick,
+  pending,
+  disabled,
+  label,
+}: {
+  onClick: () => void
+  pending: boolean
+  disabled?: boolean
+  label: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={pending || disabled}
+      aria-label={`Export ${label} to CSV`}
+      title={`Export filtered ${label} to CSV`}
+      className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-fg-muted ring-1 ring-border-strong transition hover:text-fg disabled:pointer-events-none disabled:opacity-50"
+    >
+      <Download size={12} aria-hidden />
+      {pending ? 'Exporting…' : 'CSV'}
+    </button>
+  )
 }

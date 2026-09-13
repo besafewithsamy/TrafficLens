@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronDown, ChevronUp } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Download } from 'lucide-react'
 import { EvidenceTable } from '../components/EvidenceTable'
 import { api } from '../api/client'
 import { CapturePicker } from '../components/CapturePicker'
@@ -8,6 +8,8 @@ import { EmptyState, ErrorState } from '../components/states'
 import { mutateError, mutateSuccess } from '../components/toasts'
 import { SkeletonRow, SkeletonStatus, formatTime } from '../components/ui'
 import { useSelectedCapture } from '../hooks/captures'
+import { fetchAllPages, useCsvExport } from '../hooks/useCsvExport'
+import { csvTime } from '../utils/csv'
 import type { Alert } from '../types/api'
 
 const SEVERITY_STYLE: Record<string, { badge: string; bar: string; label: string }> = {
@@ -55,6 +57,29 @@ export function AlertsPage() {
         (a) => !a.tags.includes('confirmed') && !a.tags.includes('false-positive'),
       )
     : allAlerts
+
+  // CSV export of every alert matching the current filters. The server-side
+  // severity filter rides the query; the client-side "hide confirmed &
+  // false-positives" filter is applied post-fetch so the file matches the screen.
+  const alertExport = useCsvExport<Alert>({
+    label: 'alerts',
+    headers: [
+      'Timestamp', 'Severity', 'Score', 'Rule', 'Title', 'Source IP',
+      'Destination IP', 'Destination Port', 'Acknowledged', 'Tags', 'Note',
+    ],
+    toRow: (a) => [
+      csvTime(a.timestamp), a.severity, a.score, RULE_LABELS[a.rule_name] ?? a.rule_name,
+      a.title, a.source_ip, a.destination_ip, a.destination_port, a.acknowledged, a.tags, a.note,
+    ],
+    fetchAll: async () => {
+      const rows = await fetchAllPages((p) =>
+        api.listAlerts(effectiveCaptureId!, { severity: severity || undefined }, p),
+      )
+      return unconfirmedOnly
+        ? rows.filter((a) => !a.tags.includes('confirmed') && !a.tags.includes('false-positive'))
+        : rows
+    },
+  })
 
   const ack = useMutation({
     mutationFn: ({ id, acknowledged }: { id: string; acknowledged: boolean }) =>
@@ -129,14 +154,26 @@ export function AlertsPage() {
           hide confirmed & false-positives
         </label>
         {effectiveCaptureId && (
-          <a
-            href={api.captureReportUrl(effectiveCaptureId)}
-            target="_blank"
-            rel="noreferrer"
-            className="ml-auto rounded-lg px-3 py-1.5 text-xs font-medium text-info ring-1 ring-info/30 transition hover:bg-info/10"
-          >
-            Download report (HTML/PDF)
-          </a>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={alertExport.export}
+              disabled={alertExport.isExporting || isLoading}
+              aria-label="Export alerts to CSV"
+              title="Export filtered alerts to CSV"
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-fg-muted ring-1 ring-border-strong transition hover:text-fg disabled:pointer-events-none disabled:opacity-50"
+            >
+              <Download size={12} aria-hidden />
+              {alertExport.isExporting ? 'Exporting…' : 'CSV'}
+            </button>
+            <a
+              href={api.captureReportUrl(effectiveCaptureId)}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-info ring-1 ring-info/30 transition hover:bg-info/10"
+            >
+              Download report (HTML/PDF)
+            </a>
+          </div>
         )}
       </div>
 

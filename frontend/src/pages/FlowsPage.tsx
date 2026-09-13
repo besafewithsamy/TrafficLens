@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { ArrowDown, ArrowUp } from 'lucide-react'
+import { ArrowDown, ArrowUp, Download } from 'lucide-react'
 import {
   createColumnHelper,
   flexRender,
@@ -15,6 +15,8 @@ import { Modal } from '../components/Modal'
 import { EmptyState, ErrorState, Pagination } from '../components/states'
 import { SkeletonTable, formatBytes, formatTime } from '../components/ui'
 import { useSelectedCapture } from '../hooks/captures'
+import { fetchAllPages, useCsvExport } from '../hooks/useCsvExport'
+import { csvTime } from '../utils/csv'
 import type { Flow, PacketEvidence } from '../types/api'
 
 const BADGE: Record<string, string> = {
@@ -74,6 +76,34 @@ export function FlowsPage() {
 
   const flows = page?.items ?? []
 
+  // CSV export of every flow matching the current filters (paged at the cap)
+  const flowExport = useCsvExport<Flow>({
+    label: 'flows',
+    headers: [
+      'First Seen', 'Source IP', 'Source Port', 'Destination IP', 'Destination Port',
+      'Protocol', 'App Protocol', 'Direction', 'State', 'Packets', 'Bytes',
+      'Retransmissions', 'Resets', 'Duration (s)',
+    ],
+    toRow: (f) => [
+      csvTime(f.first_seen), f.source_ip, f.source_port, f.destination_ip, f.destination_port,
+      f.transport_protocol, f.application_protocol, f.direction, f.tcp_state,
+      f.packets, f.bytes, f.retransmissions, f.resets, f.duration,
+    ],
+    fetchAll: () =>
+      fetchAllPages((p) =>
+        api.listFlows(
+          effectiveCaptureId!,
+          {
+            transport: transport || undefined,
+            direction: direction || undefined,
+            sort,
+            order,
+          },
+          p,
+        ),
+      ),
+  })
+
   return (
     <div className="p-8">
       <h1 className="text-2xl font-semibold text-fg">Flows</h1>
@@ -128,6 +158,16 @@ export function FlowsPage() {
           className="rounded-lg px-2.5 py-1.5 text-xs text-fg-muted ring-1 ring-border-strong hover:text-fg"
         >
           {order === 'asc' ? (<><ArrowUp size={12} className="inline" aria-hidden /> asc</>) : (<><ArrowDown size={12} className="inline" aria-hidden /> desc</>)}
+        </button>
+        <button
+          onClick={flowExport.export}
+          disabled={flowExport.isExporting || !effectiveCaptureId || isLoading}
+          aria-label="Export flows to CSV"
+          title="Export filtered flows to CSV"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-fg-muted ring-1 ring-border-strong transition hover:text-fg disabled:pointer-events-none disabled:opacity-50"
+        >
+          <Download size={12} aria-hidden />
+          {flowExport.isExporting ? 'Exporting…' : 'CSV'}
         </button>
       </div>
 

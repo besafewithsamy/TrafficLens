@@ -118,9 +118,10 @@ export const api = {
   getFlow: (id: string) => request<FlowDetail>(`/flows/${id}`),
 
   // Hosts (Step 3)
-  listHosts: (captureId: string, internal?: boolean) => {
+  listHosts: (captureId: string, internal?: boolean, limit?: number) => {
     const params = new URLSearchParams({ capture_id: captureId })
     if (internal !== undefined) params.set('internal', String(internal))
+    if (limit !== undefined) params.set('limit', String(limit))
     return request<Host[]>(`/hosts?${params}`)
   },
 

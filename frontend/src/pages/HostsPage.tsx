@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import { X } from 'lucide-react'
+import { Download, X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { CapturePicker } from '../components/CapturePicker'
 import { SkeletonRow, SkeletonStatus, formatBytes, formatTime } from '../components/ui'
 import { useSelectedCapture } from '../hooks/captures'
+import { useCsvExport } from '../hooks/useCsvExport'
+import { csvTime } from '../utils/csv'
 import type { Host } from '../types/api'
 
 export function HostsPage() {
@@ -17,6 +19,22 @@ export function HostsPage() {
     queryFn: () =>
       api.listHosts(effectiveCaptureId!, internalFilter ? internalFilter === 'true' : undefined),
     enabled: !!effectiveCaptureId,
+  })
+
+  // CSV export of every host matching the current internal/external filter.
+  // The hosts endpoint is un-paginated (single request, cap 1000).
+  const hostExport = useCsvExport<Host>({
+    label: 'hosts',
+    headers: [
+      'IP', 'Hostname', 'Internal', 'Role', 'MAC', 'Bytes Sent', 'Bytes Received',
+      'Packets Sent', 'Packets Received', 'Services', 'First Seen', 'Last Seen',
+    ],
+    toRow: (h) => [
+      h.ip, h.hostname, h.is_internal, h.role, h.mac, h.bytes_sent, h.bytes_received,
+      h.packets_sent, h.packets_received, h.services, csvTime(h.first_seen), csvTime(h.last_seen),
+    ],
+    fetchAll: () =>
+      api.listHosts(effectiveCaptureId!, internalFilter ? internalFilter === 'true' : undefined, 1000),
   })
 
   return (
@@ -45,6 +63,16 @@ export function HostsPage() {
             {l}
           </button>
         ))}
+        <button
+          onClick={hostExport.export}
+          disabled={hostExport.isExporting || !effectiveCaptureId || isLoading}
+          aria-label="Export hosts to CSV"
+          title="Export filtered hosts to CSV"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-fg-muted ring-1 ring-border-strong transition hover:text-fg disabled:pointer-events-none disabled:opacity-50"
+        >
+          <Download size={12} aria-hidden />
+          {hostExport.isExporting ? 'Exporting…' : 'CSV'}
+        </button>
       </div>
 
       {!analyzed.length ? (
