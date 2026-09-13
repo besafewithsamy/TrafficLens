@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
-import { EmptyState, ErrorState, LoadingState } from '../components/states'
-import { StatusPill, formatBytes } from '../components/ui'
+import { EmptyState, ErrorState } from '../components/states'
+import { mutateError, mutateSuccess } from '../components/toasts'
+import { SkeletonRow, SkeletonStatus, StatusPill, formatBytes } from '../components/ui'
 import { useCaptures } from '../hooks/captures'
 import type { Case, TimelineEvent } from '../types/api'
 
@@ -32,18 +33,32 @@ export function CasesPage() {
       setCreateError(null)
       setSelectedCaseId(c.id)
       queryClient.invalidateQueries({ queryKey: ['cases'] })
+      mutateSuccess(`Case created — ${c.name}`, 'case-create')
     },
-    onError: (err) => setCreateError(err.message),
+    onError: (err) => {
+      setCreateError(err.message)
+      mutateError('Case creation', err, 'case-create')
+    },
   })
 
   const addCapture = useMutation({
     mutationFn: (captureId: string) => api.addCaptureToCase(selectedCaseId!, captureId),
-    onSuccess: invalidate,
+    onSuccess: (_detail, captureId) => {
+      invalidate()
+      mutateSuccess('Capture added to case', `case-add-${captureId}`)
+    },
+    onError: (err, captureId) =>
+      mutateError('Adding capture', err, `case-add-${captureId}`),
   })
 
   const removeCapture = useMutation({
     mutationFn: (captureId: string) => api.removeCaptureFromCase(selectedCaseId!, captureId),
-    onSuccess: invalidate,
+    onSuccess: (_detail, captureId) => {
+      invalidate()
+      mutateSuccess('Capture removed from case', `case-remove-${captureId}`)
+    },
+    onError: (err, captureId) =>
+      mutateError('Removing capture', err, `case-remove-${captureId}`),
   })
 
   const closeCase = useMutation({
@@ -51,7 +66,9 @@ export function CasesPage() {
     onSuccess: () => {
       invalidate()
       queryClient.invalidateQueries({ queryKey: ['cases'] })
+      mutateSuccess('Case closed', 'case-close')
     },
+    onError: (err) => mutateError('Closing case', err, 'case-close'),
   })
 
   const active: Case | null =
@@ -98,7 +115,19 @@ export function CasesPage() {
 
         <div className="w-72 space-y-1">
           {isLoading ? (
-            <LoadingState>Loading cases…</LoadingState>
+            <SkeletonStatus label="Loading cases…">
+              <div className="space-y-1" aria-hidden>
+                {Array.from({ length: 4 }, (_, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-2 rounded-lg px-3 py-2 ring-1 ring-border"
+                  >
+                    <SkeletonRow className="flex-1" />
+                    <SkeletonRow className="w-10" />
+                  </div>
+                ))}
+              </div>
+            </SkeletonStatus>
           ) : !cases?.length ? (
             <p className="rounded-lg border border-border bg-surface-2/50 p-4 text-xs text-fg-subtle">
               No cases yet — create one and add analyzed captures.
@@ -320,7 +349,20 @@ function CaseTimeline({ caseId }: { caseId: string }) {
         </select>
       </div>
       {isLoading ? (
-        <LoadingState>Merging timelines…</LoadingState>
+        <SkeletonStatus label="Merging timelines…">
+          <div className="max-h-[55vh] space-y-0 overflow-hidden rounded-xl border border-border bg-surface-2/50" aria-hidden>
+            {Array.from({ length: 10 }, (_, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-3 border-t border-border/60 px-4 py-1.5 first:border-t-0"
+              >
+                <SkeletonRow className="w-20" />
+                <SkeletonRow className={`${i % 2 ? 'w-2/3' : 'w-5/6'}`} />
+                <SkeletonRow className="ml-auto w-14" />
+              </div>
+            ))}
+          </div>
+        </SkeletonStatus>
       ) : isError ? (
         <ErrorState message="Failed to load case timeline." onRetry={() => refetch()} />
       ) : !events?.length ? (

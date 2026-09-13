@@ -6,7 +6,7 @@ import fcose from 'cytoscape-fcose'
 import { api } from '../api/client'
 import { CapturePicker } from '../components/CapturePicker'
 import { ErrorState } from '../components/states'
-import { formatBytes } from '../components/ui'
+import { SkeletonRow, formatBytes } from '../components/ui'
 import { useSelectedCapture } from '../hooks/captures'
 import type { Graph, GraphNodeData } from '../types/api'
 import {
@@ -382,13 +382,43 @@ export function GraphPage() {
           </div>
         </div>
 
-        {!graph && (
+        {!graph && !isError && (
+          <div
+            className="absolute inset-0 flex items-center justify-center"
+            role="status"
+            aria-label="Building graph…"
+          >
+            <span className="sr-only">Building graph…</span>
+            {analyzed.length ? (
+              <div className="h-full w-full p-12" aria-hidden>
+                <div className="relative h-full w-full overflow-hidden rounded-lg">
+                  {/* scattered node placeholders across the viewport */}
+                  {[
+                    'left-[15%] top-[22%]',
+                    'left-[68%] top-[18%]',
+                    'left-[42%] top-[45%]',
+                    'left-[80%] top-[55%]',
+                    'left-[25%] top-[68%]',
+                    'left-[58%] top-[78%]',
+                  ].map((pos) => (
+                    <div
+                      key={pos}
+                      className={`absolute ${pos} flex items-center gap-3`}
+                    >
+                      <SkeletonRow className="h-10 w-10 rounded-full" />
+                      <SkeletonRow className="w-24" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <span className="text-sm text-fg-subtle">No analyzed captures yet.</span>
+            )}
+          </div>
+        )}
+        {!graph && isError && (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-fg-subtle">
-            {isError
-              ? 'Failed to build graph. Please try again.'
-              : analyzed.length
-                ? 'Building graph…'
-                : 'No analyzed captures yet.'}
+            Failed to build graph. Please try again.
           </div>
         )}
         {isError && !graph && (

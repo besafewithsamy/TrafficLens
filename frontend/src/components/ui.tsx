@@ -249,3 +249,74 @@ export function SkeletonCard({ rows = 3, className = '' }: { rows?: number; clas
     </Card>
   )
 }
+
+/* ------------------------------------------------------------------ */
+/* Loading skeletons (initial data load only — not background refresh) */
+/* ------------------------------------------------------------------ */
+
+/** A11y wrapper: announces "Loading…" to screen readers while showing skeletons. */
+export function SkeletonStatus({ label = 'Loading…', children }: { label?: string; children: React.ReactNode }) {
+  return (
+    <div role="status" aria-label={label}>
+      <span className="sr-only">{label}</span>
+      {children}
+    </div>
+  )
+}
+
+/**
+ * Skeleton body for a data table: real header row + `rows` skeleton rows with
+ * per-column width classes. Drop-in replacement for text-only table loading.
+ */
+export function SkeletonTable({
+  headers,
+  widths,
+  rows = 8,
+  className = '',
+}: {
+  headers: string[]
+  widths?: string[]
+  rows?: number
+  className?: string
+}) {
+  return (
+    <SkeletonStatus>
+      <div className={`overflow-hidden rounded-xl border border-border bg-surface-2/50 ${className}`}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wider text-fg-subtle">
+                {headers.map((h) => (
+                  <th key={h} className="px-4 py-2.5">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody aria-hidden>
+              {Array.from({ length: rows }, (_, i) => (
+                <tr key={i} className="border-t border-border/60">
+                  {headers.map((h, c) => (
+                    <td key={h} className="px-4 py-2.5">
+                      <SkeletonRow className={widths?.[c] ?? 'w-full'} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </SkeletonStatus>
+  )
+}
+
+/** Skeleton stat-box matching StatBox/Metric cards (label + big number). */
+export function SkeletonStatBox() {
+  return (
+    <div className="rounded-xl border border-border bg-surface-2/50 p-4" aria-hidden>
+      <SkeletonRow className="w-1/2" />
+      <SkeletonRow className="mt-3 h-7 w-1/3" />
+    </div>
+  )
+}

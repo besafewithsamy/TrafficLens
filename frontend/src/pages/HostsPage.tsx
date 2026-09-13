@@ -3,7 +3,7 @@ import { X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { CapturePicker } from '../components/CapturePicker'
-import { formatBytes, formatTime } from '../components/ui'
+import { SkeletonRow, SkeletonStatus, formatBytes, formatTime } from '../components/ui'
 import { useSelectedCapture } from '../hooks/captures'
 import type { Host } from '../types/api'
 
@@ -50,7 +50,39 @@ export function HostsPage() {
       {!analyzed.length ? (
         <EmptyState text="No analyzed captures yet." />
       ) : isLoading ? (
-        <EmptyState text="Profiling hosts…" />
+        <SkeletonStatus label="Profiling hosts…">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3" aria-hidden>
+            {Array.from({ length: 6 }, (_, i) => (
+              <div
+                key={i}
+                className="rounded-xl border border-border bg-surface-2/50 p-4"
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <SkeletonRow className="w-28" />
+                      <SkeletonRow className="w-16 rounded" />
+                    </div>
+                    <SkeletonRow className="mt-2 w-24" />
+                  </div>
+                  <SkeletonRow className="w-20 rounded-lg" />
+                </div>
+                <div className="mt-3 flex gap-4">
+                  <SkeletonRow className="w-28" />
+                  <SkeletonRow className="w-28" />
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  <SkeletonRow className="w-14 rounded" />
+                  <SkeletonRow className="w-14 rounded" />
+                  <SkeletonRow className="w-14 rounded" />
+                </div>
+                <div className="mt-3">
+                  <SkeletonRow className="w-40" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </SkeletonStatus>
       ) : isError ? (
         <div className="flex flex-col items-center gap-3 rounded-xl border border-danger/20 bg-danger/5 p-12">
           <div className="text-sm text-danger">{String(error)}</div>

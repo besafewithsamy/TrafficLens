@@ -4,11 +4,9 @@ import { api } from '../api/client'
 import { CapturePicker } from '../components/CapturePicker'
 import {
   EmptyState,
-  ErrorState,
-  LoadingState,
   Pagination,
 } from '../components/states'
-import { formatBytes, formatTime } from '../components/ui'
+import { SkeletonRow, SkeletonStatBox, formatBytes, formatTime } from '../components/ui'
 import { useDebouncedValue, useSelectedCapture } from '../hooks/captures'
 import type { ProtocolStats } from '../types/api'
 
@@ -20,7 +18,7 @@ export function ProtocolPage() {
   const { analyzed, effectiveCaptureId, setCaptureId } = useSelectedCapture()
   const [tab, setTab] = useState<Tab>('dns')
 
-  const { data: stats } = useQuery({
+  const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['protocolStats', effectiveCaptureId],
     queryFn: () => api.protocolStats(effectiveCaptureId!),
     enabled: !!effectiveCaptureId,
@@ -55,6 +53,13 @@ export function ProtocolPage() {
       ) : (
         <>
           {/* Protocol overview stats */}
+          {statsLoading && (tab === 'dns' || tab === 'http') && (
+            <div className="mb-4 grid grid-cols-5 gap-4" aria-hidden>
+              {Array.from({ length: 5 }, (_, i) => (
+                <SkeletonStatBox key={i} />
+              ))}
+            </div>
+          )}
           {stats && tab === 'dns' && <DnsStats stats={stats.dns} />}
           {stats && tab === 'http' && <HttpStats stats={stats.http} />}
           {tab === 'dns' && effectiveCaptureId && <DnsTable captureId={effectiveCaptureId} />}
@@ -384,7 +389,10 @@ function TableShell({
 }) {
   const queryClient = useQueryClient()
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-surface-2/50">
+    <div
+      className="overflow-hidden rounded-xl border border-border bg-surface-2/50"
+      role={loading ? 'status' : undefined}
+    >
       <div className="border-b border-border px-4 py-3 text-sm text-fg-muted">
         {error ? (
           <span className="flex items-center gap-3 text-danger">
@@ -397,7 +405,12 @@ function TableShell({
             </button>
           </span>
         ) : loading ? (
-          'Loading…'
+          <>
+            <span className="sr-only">Loading records…</span>
+            <span aria-hidden>
+              <SkeletonRow className="w-24" />
+            </span>
+          </>
         ) : (
           `${count.toLocaleString()} records`
         )}
@@ -413,7 +426,13 @@ function TableShell({
               ))}
             </tr>
           </thead>
-          <tbody>{children}</tbody>
+          <tbody>
+            {loading ? (
+              <SkeletonTds headers={headers} rows={8} />
+            ) : (
+              children
+            )}
+          </tbody>
         </table>
       </div>
       {footer}
@@ -421,8 +440,24 @@ function TableShell({
   )
 }
 
+/** Skeleton body rows for TableShell — one td per column, varied widths. */
+function SkeletonTds({ headers, rows }: { headers: string[]; rows: number }) {
+  const widths = ['w-24', 'w-20', 'w-40', 'w-14', 'w-24', 'w-20', 'w-28']
+  return (
+    <>
+      {Array.from({ length: rows }, (_, r) => (
+        <tr key={r} className="border-t border-border/60" aria-hidden>
+          {headers.map((h, c) => (
+            <td key={h} className="px-4 py-2">
+              <SkeletonRow className={widths[c % widths.length]} />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
+  )
+}
+
 function Td({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return <td className={`px-4 py-2 text-fg-muted ${className}`}>{children}</td>
 }
-
-export { LoadingState, ErrorState }

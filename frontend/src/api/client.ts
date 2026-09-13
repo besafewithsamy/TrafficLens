@@ -35,6 +35,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return resp.json()
 }
 
+/**
+ * Safe, user-displayable message from an API error. `request()` throws
+ * `Error(detail)` with the backend's client-actionable detail; anything else
+ * (network failure, unexpected shape) falls back to a generic message so
+ * toasts never leak internals or stack traces.
+ */
+export function apiErrorMessage(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message
+  return 'Request failed'
+}
+
 export interface Pagination {
   limit?: number
   offset?: number

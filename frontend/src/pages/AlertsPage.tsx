@@ -4,8 +4,9 @@ import { Check, ChevronDown, ChevronUp } from 'lucide-react'
 import { EvidenceTable } from '../components/EvidenceTable'
 import { api } from '../api/client'
 import { CapturePicker } from '../components/CapturePicker'
-import { EmptyState, ErrorState, LoadingState } from '../components/states'
-import { formatTime } from '../components/ui'
+import { EmptyState, ErrorState } from '../components/states'
+import { mutateError, mutateSuccess } from '../components/toasts'
+import { SkeletonRow, SkeletonStatus, formatTime } from '../components/ui'
 import { useSelectedCapture } from '../hooks/captures'
 import type { Alert } from '../types/api'
 
@@ -58,7 +59,11 @@ export function AlertsPage() {
   const ack = useMutation({
     mutationFn: ({ id, acknowledged }: { id: string; acknowledged: boolean }) =>
       api.ackAlert(id, acknowledged),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
+    onSuccess: (_alert, vars) => {
+      mutateSuccess(vars.acknowledged ? 'Alert acknowledged' : 'Acknowledgement removed', `ack-${vars.id}`)
+      queryClient.invalidateQueries({ queryKey: ['alerts'] })
+    },
+    onError: (err, vars) => mutateError('Alert update', err, `ack-${vars.id}`),
   })
 
   const triage = useMutation({
@@ -71,7 +76,11 @@ export function AlertsPage() {
       tags?: string[]
       note?: string
     }) => api.triageAlert(id, body),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
+    onSuccess: (_alert, vars) => {
+      mutateSuccess(vars.note !== undefined ? 'Note saved' : 'Triage updated', `triage-${vars.id}`)
+      queryClient.invalidateQueries({ queryKey: ['alerts'] })
+    },
+    onError: (err, vars) => mutateError('Triage update', err, `triage-${vars.id}`),
   })
 
   // capture summary for correlated incidents
@@ -164,7 +173,27 @@ export function AlertsPage() {
       {!analyzed.length ? (
         <EmptyState>No analyzed captures yet.</EmptyState>
       ) : isLoading ? (
-        <LoadingState>Running suspicion engine…</LoadingState>
+        <SkeletonStatus label="Running suspicion engine…">
+          <div className="space-y-3" aria-hidden>
+            {Array.from({ length: 6 }, (_, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-4 overflow-hidden rounded-xl border border-border bg-surface-2/50 px-5 py-4"
+              >
+                {/* score gauge */}
+                <SkeletonRow className="h-12 w-12 shrink-0 rounded-full" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <SkeletonRow className="w-20 rounded" />
+                    <SkeletonRow className="w-28 rounded" />
+                  </div>
+                  <SkeletonRow className={`${i % 2 ? 'w-2/3' : 'w-5/6'}`} />
+                  <SkeletonRow className="w-1/4" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </SkeletonStatus>
       ) : isError ? (
         <ErrorState message="Failed to load alerts." onRetry={() => refetch()} />
       ) : !alerts.length ? (

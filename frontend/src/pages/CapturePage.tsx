@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { StatusPill, formatBytes } from '../components/ui'
+import { mutateError, mutateSuccess, watchJobForToast } from '../components/toasts'
 import { useCaptures } from '../hooks/captures'
 import type { Capture, Job } from '../types/api'
 
@@ -21,9 +22,13 @@ export function CapturePage() {
     onSuccess: async (capture) => {
       setUploadError(null)
       setSelectedCapture(capture)
+      mutateSuccess(`Capture uploaded — ${capture.filename}`)
       await queryClient.invalidateQueries({ queryKey: ['captures'] })
     },
-    onError: (err) => setUploadError(err.message),
+    onError: (err) => {
+      setUploadError(err.message)
+      mutateError('Upload', err, 'capture-upload')
+    },
   })
 
   const analyze = useMutation({
@@ -31,7 +36,12 @@ export function CapturePage() {
     onSuccess: (job) => {
       setLiveJob(job)
       queryClient.invalidateQueries({ queryKey: ['captures'] })
+      mutateSuccess('Analysis started')
+      // completion/failure toast arrives via this watcher even if the
+      // analyst navigates away from the page mid-analysis
+      watchJobForToast(job.id)
     },
+    onError: (err) => mutateError('Starting analysis', err),
   })
 
   // SSE live progress for the running job (falls back to captures polling).
@@ -320,20 +330,28 @@ function LiveCapturePanel() {
         bpf: bpf || undefined,
         max_seconds: duration,
       }),
-    onSuccess: () => {
+    onSuccess: (_status) => {
       setLiveError(null)
       queryClient.invalidateQueries({ queryKey: ['liveStatus'] })
+      mutateSuccess('Live capture started')
     },
-    onError: (err) => setLiveError(err.message),
+    onError: (err) => {
+      setLiveError(err.message)
+      mutateError('Starting live capture', err, 'live-start')
+    },
   })
 
   const stop = useMutation({
     mutationFn: api.liveStop,
-    onSuccess: () => {
+    onSuccess: ({ capture }) => {
       queryClient.invalidateQueries({ queryKey: ['liveStatus'] })
       queryClient.invalidateQueries({ queryKey: ['captures'] })
+      mutateSuccess(`Live capture stopped — ${capture.filename} queued for analysis`)
     },
-    onError: (err) => setLiveError(err.message),
+    onError: (err) => {
+      setLiveError(err.message)
+      mutateError('Stopping live capture', err, 'live-stop')
+    },
   })
 
   const running = live?.status === 'running'

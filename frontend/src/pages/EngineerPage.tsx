@@ -13,7 +13,7 @@ import {
 } from 'recharts'
 import { api } from '../api/client'
 import { CapturePicker } from '../components/CapturePicker'
-import { formatBytes } from '../components/ui'
+import { SkeletonRow, SkeletonStatus, formatBytes } from '../components/ui'
 import { useSelectedCapture } from '../hooks/captures'
 import type { EngineerIssue } from '../types/api'
 
@@ -72,9 +72,33 @@ export function EngineerPage() {
           No analyzed captures yet.
         </div>
       ) : isLoading ? (
-        <div className="rounded-xl border border-border bg-surface-2/50 p-12 text-center text-sm text-fg-subtle">
-          Computing network health…
-        </div>
+        <SkeletonStatus label="Computing network health…">
+          <div className="space-y-6" aria-hidden>
+            {/* health banner */}
+            <SkeletonRow className="w-32 rounded-lg" />
+            {/* top stats */}
+            <div className="grid grid-cols-6 gap-4">
+              {Array.from({ length: 6 }, (_, i) => (
+                <div key={i} className="rounded-xl border border-border bg-surface-2/50 p-4">
+                  <SkeletonRow className="w-1/2" />
+                  <SkeletonRow className="mt-2 h-6 w-1/3" />
+                </div>
+              ))}
+            </div>
+            {/* TCP + DNS health + charts */}
+            <div className="grid grid-cols-2 gap-4">
+              {Array.from({ length: 4 }, (_, i) => (
+                <div
+                  key={i}
+                  className="rounded-xl border border-border bg-surface-2/50 p-4"
+                >
+                  <SkeletonRow className="mb-4 w-28" />
+                  <SkeletonRow className="h-44 w-full rounded-lg" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </SkeletonStatus>
       ) : isError ? (
         <div className="flex flex-col items-center gap-3 rounded-xl border border-danger/20 bg-danger/5 p-12">
           <div className="text-sm text-danger">{String(error)}</div>

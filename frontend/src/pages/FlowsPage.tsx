@@ -12,8 +12,8 @@ import {
 import { api } from '../api/client'
 import { CapturePicker } from '../components/CapturePicker'
 import { Modal } from '../components/Modal'
-import { EmptyState, ErrorState, LoadingState, Pagination } from '../components/states'
-import { formatBytes, formatTime } from '../components/ui'
+import { EmptyState, ErrorState, Pagination } from '../components/states'
+import { SkeletonTable, formatBytes, formatTime } from '../components/ui'
 import { useSelectedCapture } from '../hooks/captures'
 import type { Flow, PacketEvidence } from '../types/api'
 
@@ -134,7 +134,11 @@ export function FlowsPage() {
       {!analyzed.length ? (
         <EmptyState>No analyzed captures yet — upload and analyze a PCAP first.</EmptyState>
       ) : isLoading ? (
-        <LoadingState>Reconstructing flows…</LoadingState>
+        <SkeletonTable
+          headers={['First Seen', 'Source', 'Dir', 'Destination', 'Proto', 'State', 'Packets', 'Bytes', 'Retrans', 'Resets', '']}
+          widths={['w-20', 'w-36', 'w-12', 'w-36', 'w-16', 'w-20', 'w-16', 'w-16', 'w-14', 'w-12', 'w-16']}
+          rows={8}
+        />
       ) : isError ? (
         <ErrorState message={String(error)} onRetry={() => refetch()} />
       ) : !flows.length ? (
@@ -373,7 +377,14 @@ function FlowEvidenceModal({ flowId, onClose }: { flowId: string; onClose: () =>
           </button>
         </div>
       ) : isLoading || !flow ? (
-        <div className="p-12 text-center text-sm text-fg-subtle">Loading packet evidence…</div>
+        <div className="p-4">
+          <SkeletonTable
+            headers={['Time', 'Source', 'Destination', 'Proto', 'Flags', 'Len', 'Info']}
+            widths={['w-20', 'w-32', 'w-32', 'w-14', 'w-20', 'w-12', 'w-40']}
+            rows={6}
+            className="border-0"
+          />
+        </div>
       ) : (
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-surface-2/50">

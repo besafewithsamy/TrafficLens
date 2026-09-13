@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { CapturePicker } from '../components/CapturePicker'
 import { EvidenceTable } from '../components/EvidenceTable'
-import { formatTime } from '../components/ui'
+import { SkeletonRow, SkeletonStatus, formatTime } from '../components/ui'
 import { useSelectedCapture } from '../hooks/captures'
 import type { TimelineEvent } from '../types/api'
 
@@ -57,9 +57,37 @@ export function ReplayPage() {
       </div>
 
       {!events ? (
-        <div className="rounded-xl border border-border bg-surface-2/50 p-12 text-center text-sm text-fg-subtle">
-          {analyzed.length ? 'Loading events…' : 'No analyzed captures yet.'}
-        </div>
+        analyzed.length ? (
+          <SkeletonStatus label="Loading events…">
+            <div className="flex flex-1 flex-col gap-4" aria-hidden>
+              {/* transport controls */}
+              <div className="flex items-center gap-4 rounded-xl border border-border bg-surface-2/50 px-5 py-4">
+                <SkeletonRow className="w-20 rounded-full" />
+                <SkeletonRow className="flex-1" />
+                <SkeletonRow className="w-24" />
+                <SkeletonRow className="w-12" />
+              </div>
+              {/* current-event spotlight */}
+              <div className="flex items-center gap-4 rounded-xl border border-border bg-surface-2/50 px-5 py-4">
+                <SkeletonRow className="w-16" />
+                <SkeletonRow className="w-1/2" />
+              </div>
+              {/* event tape */}
+              <div className="flex-1 space-y-1 rounded-xl border border-border bg-surface-2/50 p-3">
+                {Array.from({ length: 8 }, (_, i) => (
+                  <div key={i} className="flex items-center gap-3 rounded-lg px-3 py-1.5">
+                    <SkeletonRow className="w-16" />
+                    <SkeletonRow className={`${i % 2 ? 'w-2/3' : 'w-4/5'}`} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </SkeletonStatus>
+        ) : (
+          <div className="rounded-xl border border-border bg-surface-2/50 p-12 text-center text-sm text-fg-subtle">
+            No analyzed captures yet.
+          </div>
+        )
       ) : isError ? (
         <div className="rounded-xl border border-border bg-surface-2/50 p-12 text-center text-sm text-danger">
           Failed to load replay events. Please try again.

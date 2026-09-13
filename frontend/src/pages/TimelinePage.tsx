@@ -5,7 +5,7 @@ import { CapturePicker } from '../components/CapturePicker'
 import { Modal } from '../components/Modal'
 import { EvidenceTable } from '../components/EvidenceTable'
 import { EmptyState, ErrorState, Pagination } from '../components/states'
-import { formatTime } from '../components/ui'
+import { SkeletonRow, SkeletonStatus, formatTime } from '../components/ui'
 import { useDebouncedValue, useSelectedCapture } from '../hooks/captures'
 import type { TimelineEvent } from '../types/api'
 
@@ -92,9 +92,25 @@ export function TimelinePage() {
           No analyzed captures yet.
         </div>
       ) : isLoading ? (
-        <div className="rounded-xl border border-border bg-surface-2/50 p-12 text-center text-sm text-fg-subtle">
-          Building timeline…
-        </div>
+        <SkeletonStatus label="Building timeline…">
+          <div
+            className="overflow-hidden rounded-xl border border-border bg-surface-2/50"
+            aria-hidden
+          >
+            <div className="border-b border-border px-4 py-3">
+              <SkeletonRow className="w-24" />
+            </div>
+            <div className="divide-y divide-border/60">
+              {Array.from({ length: 10 }, (_, i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-2">
+                  <SkeletonRow className="w-16" />
+                  <SkeletonRow className={`${i % 2 ? 'w-2/3' : 'w-5/6'}`} />
+                  <SkeletonRow className="ml-auto w-12 rounded" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </SkeletonStatus>
       ) : isError ? (
         <ErrorState message="Failed to load timeline events." onRetry={() => refetch()} />
       ) : !events.length ? (

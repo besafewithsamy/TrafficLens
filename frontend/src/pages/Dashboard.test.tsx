@@ -83,8 +83,12 @@ describe('Dashboard', () => {
     expect(screen.getByRole('link', { name: 'Upload your first PCAP' })).toBeDefined()
   })
 
-  it('shows a loading state while captures load', () => {
-    renderPage(<Dashboard />, { queries: [] })
+  it('shows skeleton loading state while captures load', () => {
+    const { container } = renderPage(<Dashboard />, { queries: [] })
+    // sr-only announcer keeps the loading text for screen readers
     expect(screen.getByText('Loading…')).toBeDefined()
+    // stat-card skeletons + table skeleton rows replace the old text-only box
+    expect(container.querySelectorAll('.skeleton-shimmer').length).toBeGreaterThan(10)
+    expect(screen.getByText('File')).toBeDefined() // skeleton table headers render
   })
 })

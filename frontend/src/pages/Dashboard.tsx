@@ -1,7 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
-import { StatusPill, formatBytes, formatDuration } from '../components/ui'
+import {
+  SkeletonStatBox,
+  SkeletonTable,
+  StatusPill,
+  formatBytes,
+  formatDuration,
+} from '../components/ui'
 import { useCaptures } from '../hooks/captures'
 import type { Capture } from '../types/api'
 
@@ -42,16 +48,24 @@ export function Dashboard() {
       </div>
 
       {/* Top statistics */}
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <StatCard label="Captures" value={captures?.length ?? 0} />
-        <StatCard label="Analyzed" value={completed.length} tone="emerald" />
-        <StatCard label="Total Packets" value={totalPackets.toLocaleString()} />
-        <StatCard
-          label="Active Jobs"
-          value={activeJob ? 1 : 0}
-          tone={activeJob ? 'amber' : undefined}
-        />
-      </div>
+      {isLoading ? (
+        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4" aria-hidden>
+          {Array.from({ length: 4 }, (_, i) => (
+            <SkeletonStatBox key={i} />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+          <StatCard label="Captures" value={captures?.length ?? 0} />
+          <StatCard label="Analyzed" value={completed.length} tone="emerald" />
+          <StatCard label="Total Packets" value={totalPackets.toLocaleString()} />
+          <StatCard
+            label="Active Jobs"
+            value={activeJob ? 1 : 0}
+            tone={activeJob ? 'amber' : undefined}
+          />
+        </div>
+      )}
 
       {/* Active job banner */}
       {activeJob && (
@@ -126,7 +140,14 @@ export function Dashboard() {
           Recent Captures
         </div>
         {isLoading ? (
-          <div className="p-8 text-center text-sm text-fg-subtle">Loading…</div>
+          <div className="p-4">
+            <SkeletonTable
+              headers={['File', 'Status', 'Packets', 'Size', 'Duration', 'Parser', 'Progress']}
+              widths={['w-40', 'w-20', 'w-16', 'w-16', 'w-16', 'w-16', 'w-24']}
+              rows={5}
+              className="border-0"
+            />
+          </div>
         ) : !captures?.length ? (
           <EmptyState />
         ) : (
